@@ -81,17 +81,39 @@ The Next.js app connects to the database to list buildings.
 
 ## Using Blender
 
-Blender can connect to the same database to visualize and edit 3D models.
+Blender does not natively support 3DCityDB. The best workflow is to export data to **CityJSON**, which Blender can read with a free add-on.
 
-1.  **Connection Details**:
-    - **Host**: `localhost`
-    - **Port**: `5432`
-    - **Database**: `citydb` (or as configured)
-    - **User/Pass**: `postgres` / `postgres`
+### 1. Install Blender Add-on
+1.  Download the **[CityJSON Blender Add-on](https://github.com/cityjson/cityjson-blender-addon)** (Code > Download ZIP).
+2.  In Blender: `Edit > Preferences > Add-ons > Install...` (select the ZIP).
+3.  Enable the add-on ("Import-Export: CityJSON").
 
-2.  **Workflow**:
-    - Use the [3DCityDB Blender-Importer-Exporter](https://github.com/3dcitydb/3dcitydb-blender-exporter) (if available/compatible) or [Up3date](https://github.com/cityjson/Up3date) for CityJSON.
-    - Alternatively, export CityGML/CityJSON from the DB and import into Blender using the [CityJSON Add-on](https://github.com/cityjson/cityjson-blender-addon).
+### 2. Export Data from DB to CityJSON
+Run this command to export your city data to a file named `my_city.json` in your `data` folder:
+
+```bash
+docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson -H citydb -d citydb -u postgres -p postgres -o /input/my_city.json
+```
+
+### 3. Import into Blender
+1.  In Blender: `File > Import > CityJSON (.json)`.
+2.  Select `D:\Docker\data\my_city.json`.
+3.  You will see your 3D buildings!
+
+### 4. Edit and Save
+You can edit the models in Blender. To save changes back:
+1.  `File > Export > CityJSON`.
+2.  Use `citydb-tool` (import command) to load the modified file back into the database.
+
+## Troubleshooting
+
+### Import Fails (0 Features)
+If the import command runs but imports 0 features, it's likely a networking issue where the tool cannot reach the database.
+**Solution**: Use the `--network docker_default` flag in your `docker run` command (as shown in the Import section above).
+
+### "System cannot find the file specified"
+This error from Docker usually means the Docker Desktop daemon is not running.
+**Solution**: Open Docker Desktop and wait for the engine to start.
 
 ## Architecture
 
