@@ -1,3 +1,6 @@
 [submodule "citydb-tool"]
 	path = citydb-tool
 	url = https://github.com/3dcitydb/citydb-tool
+[submodule "CityJSONEditor"]
+	path = CityJSONEditor
+	url = https://github.com/rostock/CityJSONEditor

@@ -100,10 +100,20 @@ docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-t
 2.  Select `D:\Docker\data\my_city.json`.
 3.  You will see your 3D buildings!
 
-### 4. Edit and Save
-You can edit the models in Blender. To save changes back:
-1.  `File > Export > CityJSON`.
-2.  Use `citydb-tool` (import command) to load the modified file back into the database.
+### 4. The "Edit Cycle" (How to Save)
+Blender saves changes to the **file**, not the database. To update the database, you must re-import.
+
+1.  **Edit in Blender**: Move buildings, change heights, etc.
+2.  **Export from Blender**: `File > Export > CityJSON`. Overwrite `my_city.json` (or create a new file).
+3.  **Update Database**: Run the **Import** command again with your modified file.
+    *   *Note*: The database will update the existing buildings if the IDs match.
+
+**The Flow:**
+`Database` --(export cmd)--> `CityJSON File` --(import)--> `Blender`
+                                      |
+                                   (Edit)
+                                      |
+`Database` <--(import cmd)-- `CityJSON File` <--(export)-- `Blender`
 
 ## Troubleshooting
 
@@ -114,6 +124,18 @@ If the import command runs but imports 0 features, it's likely a networking issu
 ### "System cannot find the file specified"
 This error from Docker usually means the Docker Desktop daemon is not running.
 **Solution**: Open Docker Desktop and wait for the engine to start.
+
+## Quick Reference
+
+**Import Data (CityGML):**
+```bash
+docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest import citygml -H citydb -d citydb -u postgres -p postgres /input/6431/6431.gml
+```
+
+**Export Data (CityJSON for Blender):**
+```bash
+docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson -H citydb -d citydb -u postgres -p postgres -o /input/my_city.json
+```
 
 ## Architecture
 
