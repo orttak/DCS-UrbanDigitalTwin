@@ -4,3 +4,6 @@
 [submodule "CityJSONEditor"]
 	path = CityJSONEditor
 	url = https://github.com/rostock/CityJSONEditor
+[submodule "cjio"]
+	path = cjio
+	url = https://github.com/cityjson/cjio
