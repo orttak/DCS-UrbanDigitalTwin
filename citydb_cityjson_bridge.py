@@ -100,6 +100,10 @@ def _validate_cityjson(path: Path) -> tuple[bool, str]:
             json.load(fh)
     except json.JSONDecodeError as exc:
         prefix = _peek_file(path, max_bytes=512)
+        # Try to recover from multiple JSON objects (CityJSON + CityJSONFeature) on separate lines.
+        merged = _try_merge_cityjson_lines(path)
+        if merged is True:
+            return True, ""
         hint = ""
         if prefix.lstrip().startswith("<"):
             hint = " Detected XML/GML; ensure you exported CityJSON, not CityGML."
@@ -111,6 +115,221 @@ def _validate_cityjson(path: Path) -> tuple[bool, str]:
     except Exception as exc:  # pragma: no cover - defensive
         return False, f"Could not read CityJSON ({path}): {exc}"
     return True, ""
+
+
+def _try_merge_cityjson_lines(path: Path) -> bool:
+    """
+    Some exports yield CityJSON Text Sequence (one JSON object per line): a base CityJSON plus CityJSONFeature.
+    Merge them into a single CityJSON file if possible. Return True if rewritten.
+    """
+    import json
+
+    try:
+        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except Exception:
+        return False
+    if len(lines) < 2:
+        return False
+    objs = []
+    for ln in lines:
+        try:
+            objs.append(json.loads(ln))
+        except Exception:
+            return False
+    base = objs[0]
+    features = objs[1:]
+    if base.get("type") != "CityJSON":
+        return False
+    combined_cityobjects = base.get("CityObjects", {}) or {}
+    vertices = base.get("vertices", []) or []
+    transform = base.get("transform")
+    metadata = base.get("metadata", {})
+
+    for feat in features:
+        if feat.get("type") not in ("CityJSONFeature", "CityJSONFeatureCollection"):
+            continue
+        if "CityObjects" in feat:
+            combined_cityobjects.update(feat["CityObjects"])
+        if "vertices" in feat and not vertices:
+            vertices = feat["vertices"]
+        if "transform" in feat and not transform:
+            transform = feat["transform"]
+        if "metadata" in feat:
+            metadata = {**metadata, **feat["metadata"]}
+
+    merged = {
+        "type": "CityJSON",
+        "version": base.get("version", "1.0"),
+        "CityObjects": combined_cityobjects,
+        "vertices": vertices,
+    }
+    if transform:
+        merged["transform"] = transform
+    if metadata:
+        merged["metadata"] = metadata
+
+    try:
+        path.write_text(json.dumps(merged), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def _load_cityjson(path: Path) -> tuple[bool, str, dict | None]:
+    ok, msg = _validate_cityjson(path)
+    if not ok:
+        return False, msg, None
+    import json
+
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return True, "", data
+    except Exception as exc:
+        return False, f"Could not parse CityJSON after validation: {exc}", None
+
+
+def _normalize_cityjson_lods(data: dict, default_lod: float | None = 0.0) -> bool:
+    """
+    Normalize geometry 'lod' fields to numeric values because CityJSONEditor expects numbers, not strings.
+    Returns True if any change was made.
+    """
+    changed = False
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            lod_val = geom.get("lod")
+            if isinstance(lod_val, str):
+                try:
+                    geom["lod"] = float(lod_val)
+                    changed = True
+                except ValueError:
+                    if default_lod is not None:
+                        geom["lod"] = float(default_lod)
+                        changed = True
+            elif lod_val is None and default_lod is not None:
+                geom["lod"] = float(default_lod)
+                changed = True
+    return changed
+
+
+def _wrap_multisurface_to_solid(data: dict) -> bool:
+    """
+    Convert MultiSurface geometries to Solid with a single shell so CityJSONEditor can import them.
+    """
+    changed = False
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            if geom.get("type") == "MultiSurface" and "boundaries" in geom:
+                boundaries = geom.get("boundaries") or []
+                geom["type"] = "Solid"
+                geom["boundaries"] = [boundaries]
+                changed = True
+    return changed
+
+
+SKIP_EXPORT_FLAG = "citydb_bridge_skip_export"
+
+
+def _collect_lod0_ids(data: dict) -> set[str]:
+    ids = set()
+    cityobjects = data.get("CityObjects", {}) or {}
+    for co_id, co in cityobjects.items():
+        geoms = co.get("geometry") or []
+        for geom in geoms:
+            lod_val = geom.get("lod")
+            try:
+                lod_num = float(lod_val)
+            except Exception:
+                lod_num = None
+            if lod_num is not None and lod_num <= 0.1:
+                ids.add(co_id)
+                break
+    return ids
+
+
+def _tag_lod0_objects(context, data: dict):
+    lod0_ids = _collect_lod0_ids(data)
+    if not lod0_ids:
+        return
+    for obj in context.scene.objects:
+        if obj.name in lod0_ids or obj.get("gmlid") in lod0_ids:
+            obj[SKIP_EXPORT_FLAG] = True
+
+
+def _sanitize_semantics(data: dict) -> bool:
+    """
+    Strip or normalize semantics to avoid CityJSONEditor errors.
+    """
+    changed = False
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            # Force a minimal semantics structure with at least one surface and one value,
+            # so CityJSONEditor does not index into empty lists.
+            geom["semantics"] = {"surfaces": [{"type": "GenericSurface"}], "values": [[0]]}
+            changed = True
+    return changed
+
+
+def _strip_textures(data: dict) -> bool:
+    changed = False
+    # Remove top-level appearance/materials/themes to avoid texture handling
+    for key in ["appearance", "appearances", "materials", "textures"]:
+        if key in data:
+            del data[key]
+            changed = True
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            if geom.get("texture") != {}:
+                geom["texture"] = {}
+                changed = True
+    return changed
+
+
+def _has_texture_data(data: dict) -> bool:
+    if "appearance" in data or "appearances" in data or "materials" in data or "textures" in data:
+        return True
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            if geom.get("texture"):
+                return True
+    return False
+
+
+def _prepare_cityjson_for_import(local_file: Path, settings) -> tuple[bool, str, dict | None]:
+    ok, msg, data = _load_cityjson(local_file)
+    if not ok:
+        return False, msg, None
+    changed = False
+    if _normalize_cityjson_lods(data):
+        changed = True
+    if settings.overview_wrap_multisurface and _wrap_multisurface_to_solid(data):
+        changed = True
+    if _sanitize_semantics(data):
+        changed = True
+    if _strip_textures(data):
+        changed = True
+    # Ensure every geometry has a texture key, even if empty
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            if "texture" not in geom:
+                geom["texture"] = {}
+                changed = True
+    if changed:
+        import json as _json
+        local_file.write_text(_json.dumps(data), encoding="utf-8")
+    return True, "", data
 
 
 def _require_cityjson_editor() -> bool:
@@ -197,12 +416,17 @@ class CityDBBridgePreferences(AddonPreferences):
     low_lods: StringProperty(
         name="Low LoDs",
         description="LoDs used for the overview fetch (comma-separated)",
-        default="0,1",
+        default="0",
     )
     high_lods: StringProperty(
         name="High LoDs",
         description="LoDs used when fetching a selected building",
         default="2,3",
+    )
+    overview_wrap_multisurface: BoolProperty(
+        name="Wrap MultiSurface as Solid (overview)",
+        description="Convert MultiSurface geometries to a thin Solid for LoD0/overview fetch so CityJSONEditor can import them",
+        default=True,
     )
     high_sql_template: StringProperty(
         name="High-LoD SQL filter",
@@ -213,6 +437,26 @@ class CityDBBridgePreferences(AddonPreferences):
         name="Replace selection on high-LoD load",
         description="Delete selected objects before loading detailed geometry",
         default=True,
+    )
+    fallback_on_empty: BoolProperty(
+        name="Fallback if empty",
+        description="If overview fetch returns no CityObjects, retry with fallback LoDs",
+        default=True,
+    )
+    fallback_lods_low: StringProperty(
+        name="Fallback LoDs",
+        description="LoDs to try if the overview fetch is empty",
+        default="1,2",
+    )
+    fallback_on_empty: BoolProperty(
+        name="Fallback if empty",
+        description="If overview fetch returns no CityObjects, retry with fallback LoDs",
+        default=True,
+    )
+    fallback_lods_low: StringProperty(
+        name="Fallback LoDs",
+        description="LoDs to try if the overview fetch is empty",
+        default="1,2",
     )
     extra_export_args: StringProperty(
         name="Extra export args",
@@ -245,8 +489,11 @@ class CityDBBridgePreferences(AddonPreferences):
         col.prop(self, "db_password")
         col.prop(self, "low_lods")
         col.prop(self, "high_lods")
+        col.prop(self, "overview_wrap_multisurface")
         col.prop(self, "high_sql_template")
         col.prop(self, "replace_on_high")
+        col.prop(self, "fallback_on_empty")
+        col.prop(self, "fallback_lods_low")
         col.prop(self, "extra_export_args")
         col.prop(self, "extra_import_args")
         col.label(text="Save Blender preferences to persist these defaults.")
@@ -305,11 +552,15 @@ class CityDBBridgeSettings(PropertyGroup):
     )
     low_lods: StringProperty(
         name="Low LoDs",
-        default="0,1",
+        default="0",
     )
     high_lods: StringProperty(
         name="High LoDs",
         default="2,3",
+    )
+    overview_wrap_multisurface: BoolProperty(
+        name="Wrap MultiSurface as Solid (overview)",
+        default=True,
     )
     high_sql_template: StringProperty(
         name="High-LoD SQL filter",
@@ -318,6 +569,14 @@ class CityDBBridgeSettings(PropertyGroup):
     replace_on_high: BoolProperty(
         name="Replace selection on high-LoD load",
         default=True,
+    )
+    fallback_on_empty: BoolProperty(
+        name="Fallback if empty",
+        default=True,
+    )
+    fallback_lods_low: StringProperty(
+        name="Fallback LoDs",
+        default="1,2",
     )
     docker_network: StringProperty(
         name="Docker network",
@@ -367,8 +626,11 @@ def _sync_from_prefs(settings: CityDBBridgeSettings, prefs: CityDBBridgePreferen
     settings.docker_image = prefs.docker_image
     settings.low_lods = prefs.low_lods
     settings.high_lods = prefs.high_lods
+    settings.overview_wrap_multisurface = prefs.overview_wrap_multisurface
     settings.high_sql_template = prefs.high_sql_template
     settings.replace_on_high = prefs.replace_on_high
+    settings.fallback_on_empty = prefs.fallback_on_empty
+    settings.fallback_lods_low = prefs.fallback_lods_low
     settings.extra_export_args = prefs.extra_export_args
     settings.extra_import_args = prefs.extra_import_args
 
@@ -417,8 +679,11 @@ class CITYDB_OT_SaveDefaults(Operator):
         prefs.docker_image = settings.docker_image
         prefs.low_lods = settings.low_lods
         prefs.high_lods = settings.high_lods
+        prefs.overview_wrap_multisurface = settings.overview_wrap_multisurface
         prefs.high_sql_template = settings.high_sql_template
         prefs.replace_on_high = settings.replace_on_high
+        prefs.fallback_on_empty = settings.fallback_on_empty
+        prefs.fallback_lods_low = settings.fallback_lods_low
         prefs.extra_export_args = settings.extra_export_args
         prefs.extra_import_args = settings.extra_import_args
         settings.last_message = "Defaults updated. Save user preferences to keep them."
@@ -526,6 +791,12 @@ class CITYDB_OT_FetchFromDB(Operator):
     bl_description = "Export CityJSON from CityDB with docker and load it with CityJSONEditor"
 
     def execute(self, context):
+        wm = getattr(bpy.context, "window_manager", None)
+        if wm:
+            try:
+                wm.progress_begin(0, 3)
+            except Exception:
+                wm = None
         settings = context.scene.citydb_bridge_settings
         missing = _validate_settings(settings)
         if missing:
@@ -543,34 +814,74 @@ class CITYDB_OT_FetchFromDB(Operator):
 
         try:
             _run_command(cmd, settings.db_password)
+            if wm:
+                wm.progress_update(1)
         except RuntimeError as exc:
             settings.last_message = str(exc)
             self.report({"ERROR"}, settings.last_message)
+            if wm:
+                wm.progress_end()
             return {"CANCELLED"}
 
         local_file = paths["import_file"]
         if not local_file.exists():
             settings.last_message = f"Export command finished, but file not found: {local_file}"
             self.report({"ERROR"}, settings.last_message)
+            if wm:
+                wm.progress_end()
             return {"CANCELLED"}
 
-        ok, msg = _validate_cityjson(local_file)
+        ok, msg, data = _prepare_cityjson_for_import(local_file, settings)
         if not ok:
             settings.last_message = f"CityJSON file check failed: {msg}"
             self.report({"ERROR"}, settings.last_message)
+            if wm:
+                wm.progress_end()
             return {"CANCELLED"}
+
+        if settings.fallback_on_empty and (not data.get("CityObjects")):
+            fallback_lods = settings.fallback_lods_low.strip()
+            if fallback_lods:
+                fallback_cmd = _build_export_command(
+                    settings, target_in_container, lods=fallback_lods, sql_filter=None
+                )
+                try:
+                    _run_command(fallback_cmd, settings.db_password)
+                    if wm:
+                        wm.progress_update(2)
+                except RuntimeError as exc:
+                    settings.last_message = f"Fallback export failed: {exc}"
+                    self.report({"ERROR"}, settings.last_message)
+                    if wm:
+                        wm.progress_end()
+                    return {"CANCELLED"}
+                ok, msg, data = _prepare_cityjson_for_import(local_file, settings)
+                if not ok or not data.get("CityObjects"):
+                    settings.last_message = (
+                        f"Overview fetch returned empty even after fallback LoDs ({fallback_lods}). {msg}"
+                    )
+                    self.report({"ERROR"}, settings.last_message)
+                    if wm:
+                        wm.progress_end()
+                    return {"CANCELLED"}
 
         op_result = bpy.ops.cityjson.import_file(
             filepath=str(local_file),
-            texture_setting=settings.import_textures,
+            texture_setting=settings.import_textures and _has_texture_data(data),
         )
         if "FINISHED" not in op_result:
             settings.last_message = f"CityJSONEditor import returned: {op_result}"
             self.report({"ERROR"}, settings.last_message)
+            if wm:
+                wm.progress_end()
             return {"CANCELLED"}
+
+        _tag_lod0_objects(context, data)
 
         settings.last_message = f"Loaded {local_file}"
         self.report({"INFO"}, settings.last_message)
+        if wm:
+            wm.progress_end()
         return {"FINISHED"}
 
 
@@ -617,7 +928,7 @@ class CITYDB_OT_FetchHighForSelection(Operator):
             self.report({"ERROR"}, settings.last_message)
             return {"CANCELLED"}
 
-        ok, msg = _validate_cityjson(local_file)
+        ok, msg, data = _prepare_cityjson_for_import(local_file, settings)
         if not ok:
             settings.last_message = f"CityJSON file check failed: {msg}"
             self.report({"ERROR"}, settings.last_message)
@@ -629,7 +940,7 @@ class CITYDB_OT_FetchHighForSelection(Operator):
 
         op_result = bpy.ops.cityjson.import_file(
             filepath=str(local_file),
-            texture_setting=settings.import_textures,
+            texture_setting=settings.import_textures and _has_texture_data(data),
         )
         if "FINISHED" not in op_result:
             settings.last_message = f"CityJSONEditor import returned: {op_result}"
@@ -660,11 +971,26 @@ class CITYDB_OT_ExportToDB(Operator):
         mount = f"{_normalize_path_for_docker(paths['root'])}:/input"
         source_in_container = f"/input/{settings.export_subdir}/{settings.export_filename}"
 
-        export_result = bpy.ops.cityjson.export_file(
-            filepath=str(paths["export_file"]),
-            check_existing=False,
-            texture_setting=settings.export_textures,
-        )
+        skip_objs = []
+        prev_hide = {}
+        for obj in context.scene.objects:
+            if obj.get(SKIP_EXPORT_FLAG):
+                skip_objs.append(obj)
+                prev_hide[obj.name] = (obj.hide_viewport, obj.hide_render)
+                obj.hide_viewport = True
+                obj.hide_render = True
+
+        try:
+            export_result = bpy.ops.cityjson.export_file(
+                filepath=str(paths["export_file"]),
+                check_existing=False,
+                texture_setting=settings.export_textures,
+            )
+        finally:
+            for obj in skip_objs:
+                hv, hr = prev_hide.get(obj.name, (False, False))
+                obj.hide_viewport = hv
+                obj.hide_render = hr
         if "FINISHED" not in export_result:
             settings.last_message = f"CityJSONEditor export returned: {export_result}"
             self.report({"ERROR"}, settings.last_message)
@@ -731,36 +1057,11 @@ class CITYDB_PT_BridgePanel(Panel):
         box = layout.box()
         box.label(text="Workspace")
         box.prop(settings, "working_dir")
-        box.prop(settings, "import_subdir")
-        box.prop(settings, "import_filename")
-        box.prop(settings, "high_import_filename")
-        box.prop(settings, "export_subdir")
-        box.prop(settings, "export_filename")
-
-        box = layout.box()
-        box.label(text="Database / docker")
-        box.prop(settings, "db_host")
-        box.prop(settings, "db_port")
-        box.prop(settings, "db_name")
-        box.prop(settings, "db_schema")
-        box.prop(settings, "db_user")
-        box.prop(settings, "db_password")
-        box.prop(settings, "docker_network")
-        box.prop(settings, "docker_image")
-        box.prop(settings, "extra_export_args")
-        box.prop(settings, "extra_import_args")
-
-        box = layout.box()
-        box.label(text="LoD controls")
-        box.prop(settings, "low_lods")
-        box.prop(settings, "high_lods")
-        box.prop(settings, "high_sql_template")
-        box.prop(settings, "replace_on_high")
 
         row = layout.row(align=True)
-        row.operator(CITYDB_OT_LoadDefaults.bl_idname, icon="FILE_REFRESH")
-        row.operator(CITYDB_OT_SaveDefaults.bl_idname, icon="FOLDER_REDIRECT")
-        layout.operator("preferences.addon_show", text="Open addon preferences").module = __name__
+        row.operator(CITYDB_OT_LoadDefaults.bl_idname, text="Load defaults", icon="FILE_REFRESH")
+        row.operator(CITYDB_OT_SaveDefaults.bl_idname, text="Save defaults", icon="FOLDER_REDIRECT")
+        layout.operator("preferences.addon_show", text="Addon preferences").module = __name__
 
         box = layout.box()
         box.label(text="CityJSON options")
@@ -782,6 +1083,33 @@ class CITYDB_PT_BridgePanel(Panel):
             layout.label(text=settings.last_message)
 
 
+class CITYDB_MT_TopMenu(bpy.types.Menu):
+    bl_label = "CityDB Bridge"
+    bl_idname = "CITYDB_MT_top_menu"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator(CITYDB_OT_FetchFromDB.bl_idname, icon="IMPORT")
+        layout.operator(CITYDB_OT_FetchHighForSelection.bl_idname, icon="ZOOM_IN")
+        layout.operator(CITYDB_OT_ExportToDB.bl_idname, icon="EXPORT")
+        layout.separator()
+        layout.operator("preferences.addon_show", text="Addon preferences").module = __name__
+
+
+def _menu_func(self, context):
+    self.layout.menu(CITYDB_MT_TopMenu.bl_idname)
+
+
+def _menu_registered() -> bool:
+    try:
+        return any(
+            getattr(draw, "__name__", "") == _menu_func.__name__
+            for draw in bpy.types.VIEW3D_MT_editor_menus._dyn_ui_initialize()
+        )
+    except Exception:
+        return False
+
+
 classes = (
     CityDBBridgePreferences,
     CityDBBridgeSettings,
@@ -791,6 +1119,7 @@ classes = (
     CITYDB_OT_FetchHighForSelection,
     CITYDB_OT_ExportToDB,
     CITYDB_PT_BridgePanel,
+    CITYDB_MT_TopMenu,
 )
 
 
@@ -809,9 +1138,18 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Scene.citydb_bridge_settings = PointerProperty(type=CityDBBridgeSettings)
     _maybe_sync_defaults()
+    try:
+        if not _menu_registered():
+            bpy.types.VIEW3D_MT_editor_menus.append(_menu_func)
+    except Exception:
+        pass
 
 
 def unregister():
+    try:
+        bpy.types.VIEW3D_MT_editor_menus.remove(_menu_func)
+    except Exception:
+        pass
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     if hasattr(bpy.types, "Scene") and hasattr(bpy.types.Scene, "citydb_bridge_settings"):
