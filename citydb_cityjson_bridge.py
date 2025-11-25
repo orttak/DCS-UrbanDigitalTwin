@@ -66,6 +66,53 @@ def _mask_password(cmd: List[str], password: str) -> str:
     return " ".join(shlex.quote(p) for p in masked)
 
 
+def _peek_file(path: Path, max_bytes: int = 256) -> str:
+    if not path.exists():
+        return "<missing>"
+    try:
+        with path.open("rb") as fh:
+            data = fh.read(max_bytes)
+        return data.decode("utf-8", errors="replace")
+    except Exception as exc:
+        return f"<unreadable: {exc}>"
+
+
+def _ensure_json_file(path: Path) -> tuple[bool, str]:
+    if not path.exists():
+        return False, f"File does not exist: {path}"
+    text = _peek_file(path)
+    stripped = text.lstrip()
+    if not stripped.startswith("{"):
+        hint = ""
+        if stripped.startswith("<"):
+            hint = " Looks like XML/GML; export must be CityJSON."
+        return False, f"File is not JSON (first bytes: {text[:60]!r}) at {path}.{hint}"
+    return True, ""
+
+
+def _validate_cityjson(path: Path) -> tuple[bool, str]:
+    ok, msg = _ensure_json_file(path)
+    if not ok:
+        return ok, msg
+    try:
+        import json
+        with path.open("r", encoding="utf-8") as fh:
+            json.load(fh)
+    except json.JSONDecodeError as exc:
+        prefix = _peek_file(path, max_bytes=512)
+        hint = ""
+        if prefix.lstrip().startswith("<"):
+            hint = " Detected XML/GML; ensure you exported CityJSON, not CityGML."
+        return (
+            False,
+            f"Invalid CityJSON ({path}): {exc.msg} at line {exc.lineno} col {exc.colno}. "
+            f"{hint}Preview: {prefix[:120]!r}",
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"Could not read CityJSON ({path}): {exc}"
+    return True, ""
+
+
 def _require_cityjson_editor() -> bool:
     return hasattr(bpy.ops, "cityjson") and hasattr(bpy.ops.cityjson, "import_file") and hasattr(
         bpy.ops.cityjson, "export_file"
@@ -507,6 +554,12 @@ class CITYDB_OT_FetchFromDB(Operator):
             self.report({"ERROR"}, settings.last_message)
             return {"CANCELLED"}
 
+        ok, msg = _validate_cityjson(local_file)
+        if not ok:
+            settings.last_message = f"CityJSON file check failed: {msg}"
+            self.report({"ERROR"}, settings.last_message)
+            return {"CANCELLED"}
+
         op_result = bpy.ops.cityjson.import_file(
             filepath=str(local_file),
             texture_setting=settings.import_textures,
@@ -561,6 +614,12 @@ class CITYDB_OT_FetchHighForSelection(Operator):
         local_file = paths["high_import_file"]
         if not local_file.exists():
             settings.last_message = f"High-LoD export finished, but file not found: {local_file}"
+            self.report({"ERROR"}, settings.last_message)
+            return {"CANCELLED"}
+
+        ok, msg = _validate_cityjson(local_file)
+        if not ok:
+            settings.last_message = f"CityJSON file check failed: {msg}"
             self.report({"ERROR"}, settings.last_message)
             return {"CANCELLED"}
 
@@ -735,10 +794,7 @@ classes = (
 )
 
 
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.citydb_bridge_settings = PointerProperty(type=CityDBBridgeSettings)
+def _maybe_sync_defaults():
     prefs = _addon_prefs()
     try:
         scene = getattr(bpy.context, "scene", None)
@@ -746,6 +802,13 @@ def register():
         scene = None
     if prefs and scene and hasattr(scene, "citydb_bridge_settings"):
         _sync_from_prefs(scene.citydb_bridge_settings, prefs)
+
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    bpy.types.Scene.citydb_bridge_settings = PointerProperty(type=CityDBBridgeSettings)
+    _maybe_sync_defaults()
 
 
 def unregister():
