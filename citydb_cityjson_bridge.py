@@ -235,35 +235,6 @@ def _wrap_multisurface_to_solid(data: dict) -> bool:
     return changed
 
 
-SKIP_EXPORT_FLAG = "citydb_bridge_skip_export"
-
-
-def _collect_lod0_ids(data: dict) -> set[str]:
-    ids = set()
-    cityobjects = data.get("CityObjects", {}) or {}
-    for co_id, co in cityobjects.items():
-        geoms = co.get("geometry") or []
-        for geom in geoms:
-            lod_val = geom.get("lod")
-            try:
-                lod_num = float(lod_val)
-            except Exception:
-                lod_num = None
-            if lod_num is not None and lod_num <= 0.1:
-                ids.add(co_id)
-                break
-    return ids
-
-
-def _tag_lod0_objects(context, data: dict):
-    lod0_ids = _collect_lod0_ids(data)
-    if not lod0_ids:
-        return
-    for obj in context.scene.objects:
-        if obj.name in lod0_ids or obj.get("gmlid") in lod0_ids:
-            obj[SKIP_EXPORT_FLAG] = True
-
-
 def _sanitize_semantics(data: dict) -> bool:
     """
     Strip or normalize semantics to avoid CityJSONEditor errors.
@@ -278,6 +249,32 @@ def _sanitize_semantics(data: dict) -> bool:
             geom["semantics"] = {"surfaces": [{"type": "RoofSurface"}], "values": [[0]]}
             changed = True
     return changed
+
+
+def _ensure_semantic_materials(context) -> None:
+    """
+    CityJSONEditor expects a material with 'CJEOtype' per mesh to derive semantics.
+    If a mesh has no materials (or none tagged), create/assign a default one.
+    """
+    for obj in context.scene.objects:
+        if getattr(obj, "type", None) != "MESH" or not getattr(obj, "data", None):
+            continue
+        mesh = obj.data
+        if not mesh.materials:
+            mat = bpy.data.materials.new(name=f"{obj.name}_mat")
+            mat["CJEOtype"] = "WallSurface"
+            mesh.materials.append(mat)
+            for poly in mesh.polygons:
+                poly.material_index = 0
+            continue
+        # Ensure at least one material has CJEOtype
+        has_tag = any(("CJEOtype" in m) for m in mesh.materials)
+        if not has_tag:
+            mesh.materials[0]["CJEOtype"] = "WallSurface"
+        # Fix any polygons pointing past the materials array
+        for poly in mesh.polygons:
+            if poly.material_index >= len(mesh.materials):
+                poly.material_index = 0
 
 
 def _strip_textures(data: dict) -> bool:
@@ -1010,8 +1007,6 @@ class CITYDB_OT_FetchFromDB(Operator):
             return {"CANCELLED"}
 
         _ensure_gmlid_props(context, data)
-        _tag_lod0_objects(context, data)
-
         settings.last_message = f"Loaded {local_file}"
         self.report({"INFO"}, settings.last_message)
         if wm:
@@ -1106,26 +1101,11 @@ class CITYDB_OT_ExportToDB(Operator):
         mount = f"{_normalize_path_for_docker(paths['root'])}:/input"
         source_in_container = f"/input/{settings.export_subdir}/{settings.export_filename}"
 
-        skip_objs = []
-        prev_hide = {}
-        for obj in context.scene.objects:
-            if obj.get(SKIP_EXPORT_FLAG):
-                skip_objs.append(obj)
-                prev_hide[obj.name] = (obj.hide_viewport, obj.hide_render)
-                obj.hide_viewport = True
-                obj.hide_render = True
-
-        try:
-            export_result = bpy.ops.cityjson.export_file(
-                filepath=str(paths["export_file"]),
-                check_existing=False,
-                texture_setting=settings.export_textures,
-            )
-        finally:
-            for obj in skip_objs:
-                hv, hr = prev_hide.get(obj.name, (False, False))
-                obj.hide_viewport = hv
-                obj.hide_render = hr
+        export_result = bpy.ops.cityjson.export_file(
+            filepath=str(paths["export_file"]),
+            check_existing=False,
+            texture_setting=settings.export_textures,
+        )
         if "FINISHED" not in export_result:
             settings.last_message = f"CityJSONEditor export returned: {export_result}"
             self.report({"ERROR"}, settings.last_message)
@@ -1150,6 +1130,8 @@ class CITYDB_OT_ExportToDB(Operator):
             "-v",
             mount,
         ]
+        # Pre-flight: ensure meshes have semantics materials so CityJSONEditor doesn't crash
+        _ensure_semantic_materials(context)
         if settings.docker_network:
             cmd.extend(["--network", settings.docker_network])
         cmd.extend(
