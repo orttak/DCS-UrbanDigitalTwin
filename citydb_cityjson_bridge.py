@@ -479,7 +479,7 @@ class CityDBBridgePreferences(AddonPreferences):
     docker_network: StringProperty(
         name="Docker network",
         description="Docker network to attach to (empty to skip)",
-        default="dcs_default",
+        default="docker_default",
     )
     default_workdir: StringProperty(
         name="Workspace folder",
