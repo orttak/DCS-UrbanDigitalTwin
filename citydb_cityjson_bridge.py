@@ -896,6 +896,50 @@ def _build_export_command(
     return cmd
 
 
+def _build_export_gml_command(
+    settings: CityDBBridgeSettings,
+    output_container_path: str,
+    lods: str | None,
+) -> List[str]:
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{_normalize_path_for_docker(Path(settings.working_dir).expanduser().resolve())}:/input",
+    ]
+    if settings.docker_network:
+        cmd.extend(["--network", settings.docker_network])
+    cmd.extend(
+        [
+            settings.docker_image,
+            "export",
+            "citygml",
+            "-H",
+            settings.db_host,
+        ]
+    )
+    if settings.db_port:
+        cmd.extend(["-P", str(settings.db_port)])
+    cmd.extend(["-d", settings.db_name])
+    if settings.db_schema:
+        cmd.extend(["-S", settings.db_schema])
+    cmd.extend(
+        [
+            "-u",
+            settings.db_user,
+        ]
+    )
+    if settings.db_password:
+        cmd.extend(["-p", settings.db_password])
+    if lods:
+        cmd.extend(["-l", lods])
+    if settings.extra_export_args:
+        cmd.extend(shlex.split(settings.extra_export_args))
+    cmd.extend(["-o", output_container_path])
+    return cmd
+
+
 def _run_command(cmd: List[str], password: str) -> subprocess.CompletedProcess:
     display = _mask_password(cmd, password)
     try:
@@ -1101,6 +1145,9 @@ class CITYDB_OT_ExportToDB(Operator):
         mount = f"{_normalize_path_for_docker(paths['root'])}:/input"
         source_in_container = f"/input/{settings.export_subdir}/{settings.export_filename}"
 
+        # Pre-flight: ensure meshes have semantics materials so CityJSONEditor doesn't crash
+        _ensure_semantic_materials(context)
+
         export_result = bpy.ops.cityjson.export_file(
             filepath=str(paths["export_file"]),
             check_existing=False,
@@ -1130,8 +1177,6 @@ class CITYDB_OT_ExportToDB(Operator):
             "-v",
             mount,
         ]
-        # Pre-flight: ensure meshes have semantics materials so CityJSONEditor doesn't crash
-        _ensure_semantic_materials(context)
         if settings.docker_network:
             cmd.extend(["--network", settings.docker_network])
         cmd.extend(
@@ -1172,6 +1217,60 @@ class CITYDB_OT_ExportToDB(Operator):
         return {"FINISHED"}
 
 
+class CITYDB_OT_ExportGMLValidate(Operator):
+    bl_idname = "citydb_bridge.export_gml_validate"
+    bl_label = "Export GML + Validate"
+    bl_description = "Export CityGML from CityDB and validate it with citygml-tools (Docker)"
+
+    def execute(self, context):
+        settings = context.scene.citydb_bridge_settings
+        missing = _validate_settings(settings)
+        if missing:
+            self.report({"ERROR"}, f"Missing required settings: {missing}")
+            return {"CANCELLED"}
+
+        paths = _build_paths(settings)
+        mount = f"{_normalize_path_for_docker(paths['root'])}:/input"
+        gml_filename = Path(settings.import_filename).with_suffix(".gml").name
+        target_in_container = f"/input/{settings.import_subdir}/{gml_filename}"
+        gml_local = paths["import_file"].with_suffix(".gml")
+
+        lods = settings.low_lods.strip() or None
+        export_cmd = _build_export_gml_command(settings, target_in_container, lods=lods)
+
+        try:
+            _run_command(export_cmd, settings.db_password)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+        if not gml_local.exists():
+            msg = f"Export finished, but file not found: {gml_local}"
+            self.report({"ERROR"}, msg)
+            return {"CANCELLED"}
+
+        # Validate with citygml-tools
+        validate_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            mount,
+            "ghcr.io/citygml4j/citygml-tools:latest",
+            "validate",
+            "--input",
+            f"/input/{settings.import_subdir}/{gml_filename}",
+        ]
+        try:
+            _run_command(validate_cmd, settings.db_password)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, f"GML validation failed: {exc}")
+            return {"CANCELLED"}
+
+        self.report({"INFO"}, f"Exported and validated: {gml_local}")
+        return {"FINISHED"}
+
+
 class CITYDB_PT_BridgePanel(Panel):
     bl_label = "CityDB Bridge"
     bl_idname = "CITYDB_PT_bridge"
@@ -1200,6 +1299,7 @@ class CITYDB_PT_BridgePanel(Panel):
         op_row.operator(CITYDB_OT_FetchFromDB.bl_idname, icon="IMPORT")
         op_row.operator(CITYDB_OT_FetchHighForSelection.bl_idname, icon="ZOOM_IN")
         op_row.operator(CITYDB_OT_ExportToDB.bl_idname, icon="EXPORT")
+        box.operator(CITYDB_OT_ExportGMLValidate.bl_idname, icon="FILE_CACHE")
 
         help_box = layout.box()
         help_box.label(text="Guide")
@@ -1247,6 +1347,7 @@ classes = (
     CITYDB_OT_FetchFromDB,
     CITYDB_OT_FetchHighForSelection,
     CITYDB_OT_ExportToDB,
+    CITYDB_OT_ExportGMLValidate,
     CITYDB_PT_BridgePanel,
     CITYDB_MT_TopMenu,
 )
