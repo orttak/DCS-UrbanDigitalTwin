@@ -1,2 +1,3 @@
 .venv
 data/from_db/*
+__pycache__/*
