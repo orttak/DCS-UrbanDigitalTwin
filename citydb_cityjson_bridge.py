@@ -8,9 +8,12 @@ bl_info = {
     "category": "Import-Export",
 }
 
+import os
 import shlex
 import subprocess
 import shutil
+import tempfile
+import json
 from pathlib import Path
 from typing import List
 
@@ -355,14 +358,66 @@ def _ensure_texture_keys_in_file(path: Path) -> tuple[bool, str]:
 def _validate_with_cjio(path: Path) -> tuple[bool, str]:
     """
     Validate CityJSON with cjio if available. Returns (ok, message).
+    For CityJSON < 2.0, attempts an in-memory upgrade for validation only.
     """
-    if shutil.which("cjio") is None:
-        return True, "cjio not installed; skipping validation."
-    cmd = ["cjio", str(path), "validate"]
+    env = os.environ.copy()
+    version = None
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    except Exception as exc:
+        with path.open("r", encoding="utf-8") as fh:
+            version = (json.load(fh) or {}).get("version")
+    except Exception:
+        version = None
+
+    # Prefer a bundled cjio (submodule) if present; otherwise fall back to PATH.
+    cjio_dir = Path(__file__).resolve().parent / "cjio"
+    cmd_prefix: List[str] = []
+    if "CJIO_BIN" in env and env["CJIO_BIN"]:
+        cmd_prefix = [env["CJIO_BIN"]]
+    elif cjio_dir.exists():
+        env["PYTHONPATH"] = (
+            f"{env.get('PYTHONPATH','')}:{cjio_dir.parent.as_posix()}".strip(":")
+        )
+        cmd_prefix = [bpy.app.binary_path_python, "-m", "cjio"]
+    else:
+        found = shutil.which("cjio")
+        if found:
+            cmd_prefix = [found]
+
+    if not cmd_prefix:
+        return True, "cjio not installed; skipping validation."
+
+    target = path
+    temp_file = None
+
+    # cjio 0.10+ validates only v2.0; upgrade temporary copy if needed.
+    if version and version != "2.0":
+        temp_file = Path(tempfile.gettempdir()) / f"{path.stem}_cjio_tmp.json"
+        upgrade_cmd = cmd_prefix + [str(path), "upgrade", "save", str(temp_file)]
+        try:
+            upgrade_result = subprocess.run(upgrade_cmd, capture_output=True, text=True, check=False, env=env)
+        except Exception as exc:  # pragma: no cover - defensive
+            return False, f"Failed to run cjio upgrade: {exc}"
+        if upgrade_result.returncode != 0:
+            return (
+                False,
+                upgrade_result.stderr.strip()
+                or upgrade_result.stdout.strip()
+                or f"cjio upgrade failed with code {upgrade_result.returncode}",
+            )
+        target = temp_file
+
+    cmd = cmd_prefix + [str(target), "validate"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+    except Exception as exc:  # pragma: no cover - defensive
         return False, f"Failed to run cjio: {exc}"
+    finally:
+        if temp_file and temp_file.exists():
+            try:
+                temp_file.unlink()
+            except Exception:
+                pass
+
     if result.returncode != 0:
         return False, result.stderr.strip() or result.stdout.strip() or f"cjio exited with {result.returncode}"
     return True, "cjio validation passed."
@@ -832,6 +887,8 @@ def _build_export_command(
     )
     if settings.db_password:
         cmd.extend(["-p", settings.db_password])
+    # Force Blender-friendly CityJSON output.
+    cmd.extend(["--cityjson-version", "1.1", "--no-json-lines"])
     if lods:
         cmd.extend(["-l", lods])
     if sql_filter:

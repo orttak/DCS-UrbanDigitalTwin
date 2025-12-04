@@ -92,7 +92,10 @@ Blender does not natively support 3DCityDB. The best workflow is to export data 
 Run this command to export your city data to a file named `my_city.json` in your `data` folder:
 
 ```bash
-docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson -H citydb -d citydb -u postgres -p postgres -o /input/my_city.json
+docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson \
+  -H citydb -d citydb -u postgres -p postgres \
+  --cityjson-version 1.1 --no-json-lines \
+  -o /input/my_city.json
 ```
 
 ### 3. Import into Blender
@@ -134,7 +137,10 @@ docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-t
 
 **Export Data (CityJSON for Blender):**
 ```bash
-docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson -H citydb -d citydb -u postgres -p postgres -o /input/my_city.json
+docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson \
+  -H citydb -d citydb -u postgres -p postgres \
+  --cityjson-version 1.1 --no-json-lines \
+  -o /input/my_city.json
 ```
 
 ## Architecture
