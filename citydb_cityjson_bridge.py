@@ -1258,7 +1258,6 @@ class CITYDB_OT_ExportGMLValidate(Operator):
             mount,
             "ghcr.io/citygml4j/citygml-tools:latest",
             "validate",
-            "--input",
             f"/input/{settings.import_subdir}/{gml_filename}",
         ]
         try:
