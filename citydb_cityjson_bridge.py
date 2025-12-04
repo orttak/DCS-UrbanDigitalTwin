@@ -10,6 +10,7 @@ bl_info = {
 
 import shlex
 import subprocess
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -270,8 +271,8 @@ def _sanitize_semantics(data: dict) -> bool:
         geoms = obj.get("geometry") or []
         for geom in geoms:
             # Force a minimal semantics structure with at least one surface and one value,
-            # so CityJSONEditor does not index into empty lists.
-            geom["semantics"] = {"surfaces": [{"type": "GenericSurface"}], "values": [[0]]}
+            # using a known surface type to avoid KeyErrors in CityJSONEditor.
+            geom["semantics"] = {"surfaces": [{"type": "RoofSurface"}], "values": [[0]]}
             changed = True
     return changed
 
@@ -291,6 +292,80 @@ def _strip_textures(data: dict) -> bool:
                 geom["texture"] = {}
                 changed = True
     return changed
+
+
+def _ensure_gmlid_props(context, data: dict) -> None:
+    """
+    Set a 'gmlid' custom property on imported objects based on CityObject ids so high-LoD fetch can find them.
+    """
+    cityobjects = data.get("CityObjects", {}) or {}
+    # Prefer explicit identifiers from attributes (gmlid/identifier/objectid); otherwise use the CityObject key.
+    id_map = {}
+    for co_id, co in cityobjects.items():
+        attrs = co.get("attributes") or {}
+        preferred = attrs.get("gmlid") or attrs.get("identifier") or attrs.get("objectid") or co_id
+        id_map[co_id] = preferred
+    ids = set(id_map.keys())
+    for obj in context.scene.objects:
+        if "gmlid" in obj:
+            continue
+        # Blender may append suffixes like ".001"; match by base name and parents/data.
+        base_name = obj.name.split(".")[0]
+        candidate_ids = {obj.name, base_name}
+        if obj.data and getattr(obj.data, "name", None):
+            candidate_ids.add(obj.data.name.split(".")[0])
+        if obj.parent:
+            candidate_ids.add(obj.parent.name.split(".")[0])
+        match = ids.intersection(candidate_ids)
+        if match:
+            co_id = next(iter(match))
+            obj["gmlid"] = id_map.get(co_id, co_id)
+
+
+def _ensure_texture_keys_in_file(path: Path) -> tuple[bool, str]:
+    """
+    Ensure every geometry has a 'texture' key to prevent CityJSONEditor import errors.
+    Returns (changed, error_message).
+    """
+    if not path.exists():
+        return False, f"File not found: {path}"
+    try:
+        import json as _json
+
+        data = _json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"Could not load JSON: {exc}"
+
+    changed = False
+    cityobjects = data.get("CityObjects", {}) or {}
+    for obj in cityobjects.values():
+        geoms = obj.get("geometry") or []
+        for geom in geoms:
+            if "texture" not in geom:
+                geom["texture"] = {}
+                changed = True
+    if changed:
+        try:
+            path.write_text(_json.dumps(data), encoding="utf-8")
+        except Exception as exc:  # pragma: no cover - defensive
+            return False, f"Failed to write JSON with texture keys: {exc}"
+    return changed, ""
+
+
+def _validate_with_cjio(path: Path) -> tuple[bool, str]:
+    """
+    Validate CityJSON with cjio if available. Returns (ok, message).
+    """
+    if shutil.which("cjio") is None:
+        return True, "cjio not installed; skipping validation."
+    cmd = ["cjio", str(path), "validate"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except Exception as exc:
+        return False, f"Failed to run cjio: {exc}"
+    if result.returncode != 0:
+        return False, result.stderr.strip() or result.stdout.strip() or f"cjio exited with {result.returncode}"
+    return True, "cjio validation passed."
 
 
 def _has_texture_data(data: dict) -> bool:
@@ -416,7 +491,7 @@ class CityDBBridgePreferences(AddonPreferences):
     low_lods: StringProperty(
         name="Low LoDs",
         description="LoDs used for the overview fetch (comma-separated)",
-        default="0",
+        default="1",
     )
     high_lods: StringProperty(
         name="High LoDs",
@@ -430,8 +505,8 @@ class CityDBBridgePreferences(AddonPreferences):
     )
     high_sql_template: StringProperty(
         name="High-LoD SQL filter",
-        description="SQL filter template; {gmlid} is replaced with the selected object's gmlid",
-        default="citydb.cityobject.gmlid = '{gmlid}'",
+        description="SQL subquery returning feature IDs; {gmlid} is replaced with the selected object's gmlid/objectid",
+        default="select id from citydb.feature where objectid = '{gmlid}'",
     )
     replace_on_high: BoolProperty(
         name="Replace selection on high-LoD load",
@@ -552,7 +627,7 @@ class CityDBBridgeSettings(PropertyGroup):
     )
     low_lods: StringProperty(
         name="Low LoDs",
-        default="0",
+        default="1",
     )
     high_lods: StringProperty(
         name="High LoDs",
@@ -564,7 +639,8 @@ class CityDBBridgeSettings(PropertyGroup):
     )
     high_sql_template: StringProperty(
         name="High-LoD SQL filter",
-        default="citydb.cityobject.gmlid = '{gmlid}'",
+        description="SQL subquery returning feature IDs; {gmlid} is replaced with the selected object's gmlid/objectid",
+        default="select id from citydb.feature where objectid = '{gmlid}'",
     )
     replace_on_high: BoolProperty(
         name="Replace selection on high-LoD load",
@@ -876,6 +952,7 @@ class CITYDB_OT_FetchFromDB(Operator):
                 wm.progress_end()
             return {"CANCELLED"}
 
+        _ensure_gmlid_props(context, data)
         _tag_lod0_objects(context, data)
 
         settings.last_message = f"Loaded {local_file}"
@@ -947,6 +1024,7 @@ class CITYDB_OT_FetchHighForSelection(Operator):
             self.report({"ERROR"}, settings.last_message)
             return {"CANCELLED"}
 
+        _ensure_gmlid_props(context, data)
         settings.last_message = f"Loaded high-LoD for gmlid '{gmlid}' from {local_file}"
         self.report({"INFO"}, settings.last_message)
         return {"FINISHED"}
@@ -993,6 +1071,18 @@ class CITYDB_OT_ExportToDB(Operator):
                 obj.hide_render = hr
         if "FINISHED" not in export_result:
             settings.last_message = f"CityJSONEditor export returned: {export_result}"
+            self.report({"ERROR"}, settings.last_message)
+            return {"CANCELLED"}
+
+        changed, err = _ensure_texture_keys_in_file(paths["export_file"])
+        if err:
+            settings.last_message = f"Post-export fix failed: {err}"
+            self.report({"ERROR"}, settings.last_message)
+            return {"CANCELLED"}
+
+        ok, vmsg = _validate_with_cjio(paths["export_file"])
+        if not ok:
+            settings.last_message = f"cjio validation failed: {vmsg}"
             self.report({"ERROR"}, settings.last_message)
             return {"CANCELLED"}
 
