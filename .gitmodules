@@ -3,7 +3,7 @@
 	url = https://github.com/3dcitydb/citydb-tool
 [submodule "CityJSONEditor"]
 	path = CityJSONEditor
-	url = https://github.com/rostock/CityJSONEditor
+	url = https://github.com/cakirmert/CityJSONEditor
 [submodule "cjio"]
 	path = cjio
 	url = https://github.com/cityjson/cjio
