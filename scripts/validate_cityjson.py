@@ -7,10 +7,12 @@ Requires cjio on PATH for full schema validation; otherwise only structural chec
 
 import argparse
 import importlib.util
+import json
+import os
+import shutil
 import subprocess
 import sys
-import shutil
-import os
+import tempfile
 from pathlib import Path
 
 # Load validation module directly to avoid importing Blender-dependent __init__.py
@@ -50,15 +52,32 @@ def main():
     parser.add_argument("--no-textures", action="store_true", help="Strip textures during validation")
     args = parser.parse_args()
 
-    ok, msg, _ = prepare_cityjson_for_import(args.filepath, allow_textures=not args.no_textures)
+    ok, msg, data, changed = prepare_cityjson_for_import(
+        args.filepath, allow_textures=not args.no_textures, write_back=False
+    )
     if not ok:
         print(f"Preparation failed: {msg}")
         sys.exit(1)
-    ok, msg = run_cjio(args.filepath)
-    if not ok:
-        print(f"cjio validation failed: {msg}")
-        sys.exit(1)
-    print(msg)
+
+    tmp_path = None
+    target = args.filepath
+    if changed:
+        # Validate a prepared copy without mutating the original file on disk.
+        fd, name = tempfile.mkstemp(prefix="cje_prepared_", suffix=".json")
+        tmp_path = Path(name)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        target = tmp_path
+
+    try:
+        ok, msg = run_cjio(target)
+        if not ok:
+            print(f"cjio validation failed: {msg}")
+            sys.exit(1)
+        print(msg)
+    finally:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
 
 
 if __name__ == "__main__":
