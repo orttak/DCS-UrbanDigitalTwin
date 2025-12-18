@@ -1,4 +1,5 @@
 .venv
+.venv-win
 data/from_db/*
 __pycache__/*
 CityDoctorValidation-3.17.3-lin/*

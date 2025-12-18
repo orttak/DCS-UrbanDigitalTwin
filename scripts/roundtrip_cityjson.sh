@@ -20,7 +20,7 @@ DB_NAME="${DB_NAME:-citydb}"
 DB_SCHEMA="${DB_SCHEMA:-}"
 DB_USER="${DB_USER:-postgres}"
 DB_PASS="${DB_PASS:-postgres}"
-CITYJSON_VERSION="${CITYJSON_VERSION:-1.1}"
+CITYJSON_VERSION="${CITYJSON_VERSION:-2.0}"
 FEATURE_ID="${CITYOBJECT_ID:-building-1}"
 EXPORT_LODS="${EXPORT_LODS:-}"
 CJIO_BIN="${CJIO_BIN:-}"
@@ -98,9 +98,11 @@ validate_cityjson() {
 
 check_single_json_object() {
   local file="$1"
-  python3 - "$file" <<'PY'
+  local expected_version="$2"
+  python3 - "$file" "$expected_version" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])
+expected = sys.argv[2]
 data = path.read_text(encoding="utf-8")
 strip = data.lstrip()
 if not strip.startswith("{"):
@@ -110,8 +112,8 @@ obj, idx = decoder.raw_decode(data)
 tail = data[idx:].strip()
 if tail:
     sys.exit(f"{path}: extra data after JSON object (JSON Lines detected)")
-if obj.get("version") != "1.1":
-    sys.exit(f"{path}: expected CityJSON version 1.1, found {obj.get('version')}")
+if expected and obj.get("version") != expected:
+    sys.exit(f"{path}: expected CityJSON version {expected}, found {obj.get('version')}")
 print(f"{path}: single CityJSON object with version {obj.get('version')}")
 PY
 }
@@ -143,7 +145,7 @@ citydb_cmd "${export_flags[@]}"
 echo "Peeking at exported file:"
 head -n 3 "${OUTPUT_FILE}" || true
 
-check_single_json_object "${OUTPUT_FILE}"
+check_single_json_object "${OUTPUT_FILE}" "${CITYJSON_VERSION}"
 validate_cityjson "${OUTPUT_FILE}"
 
 echo "Roundtrip CityJSON check succeeded."

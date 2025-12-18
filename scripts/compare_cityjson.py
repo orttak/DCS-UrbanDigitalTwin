@@ -49,6 +49,32 @@ def _as_list3(value: Any, default: list[float]) -> list[float]:
     return out
 
 
+def canonical_lod(value: Any) -> str:
+    """Canonicalize CityJSON `lod` values to make comparisons robust (e.g., '2' == 2 == 2.0)."""
+    if value is None:
+        return "<none>"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return str(value).rstrip("0").rstrip(".")
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return "<empty>"
+        try:
+            f = float(s)
+        except Exception:
+            return s
+        if f.is_integer():
+            return str(int(f))
+        return str(f).rstrip("0").rstrip(".")
+    return str(value)
+
+
 def get_transform(data: dict[str, Any]) -> tuple[list[float], list[float]]:
     transform = data.get("transform")
     if not isinstance(transform, dict):
@@ -329,8 +355,7 @@ def compute_cityjson_stats(
             geometries_total += 1
             gtype = str(geom.get("type", "<missing>"))
             geometries_by_type[gtype] += 1
-            lod = geom.get("lod", "<none>")
-            lod_key = str(lod)
+            lod_key = canonical_lod(geom.get("lod"))
             geometries_by_lod[lod_key] += 1
             geometries_by_lod_type[f"{lod_key}|{gtype}"] += 1
 
