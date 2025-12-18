@@ -4,3 +4,4 @@ data/from_db/*
 __pycache__/*
 CityDoctorValidation-3.17.3-lin/*
 CityDoctorValidation-3.17.3-win/*
+CityDoctorGUI-3.12.1-win/*

@@ -293,28 +293,28 @@ def main() -> None:
         ftype = validate_matrix.detect_file_type(f)  # type: ignore[attr-defined]
         file_types.append(ftype)
         if ftype == "CityJSON":
-            status, details, report = validate_matrix.run_cjio_validate(  # type: ignore[attr-defined]
+            status, details, report, cmd = validate_matrix.run_cjio_validate(  # type: ignore[attr-defined]
                 f,
                 cjio_bin=cjio_bin,
                 reports_dir=args.reports_dir,
                 ignore_duplicate_keys=args.ignore_duplicate_keys,
             )
-            vrows.append(validate_matrix.Row(f, ftype, "cjio validate", status, details, _rel(Path(report)) if report else ""))  # type: ignore[attr-defined]
+            vrows.append(validate_matrix.Row(f, ftype, "cjio validate", status, details, _rel(Path(report)) if report else "", cmd))  # type: ignore[attr-defined]
 
-            status, details, report = validate_matrix.run_cjvalpy_validate(  # type: ignore[attr-defined]
+            status, details, report, cmd = validate_matrix.run_cjvalpy_validate(  # type: ignore[attr-defined]
                 f, python_bin=cjvalpy_py, reports_dir=args.reports_dir
             )
-            vrows.append(validate_matrix.Row(f, ftype, "cjvalpy", status, details, _rel(Path(report)) if report else ""))  # type: ignore[attr-defined]
+            vrows.append(validate_matrix.Row(f, ftype, "cjvalpy", status, details, _rel(Path(report)) if report else "", cmd))  # type: ignore[attr-defined]
 
-            status, details, report = validate_matrix.run_import_prep(  # type: ignore[attr-defined]
+            status, details, report, cmd = validate_matrix.run_import_prep(  # type: ignore[attr-defined]
                 f, allow_textures=not args.no_textures
             )
-            vrows.append(validate_matrix.Row(f, ftype, "CityJSONEditor prep", status, details, report))  # type: ignore[attr-defined]
+            vrows.append(validate_matrix.Row(f, ftype, "CityJSONEditor prep", status, details, report, cmd))  # type: ignore[attr-defined]
         elif ftype == "CityGML":
-            status, details, report = validate_matrix.run_citydoctor(  # type: ignore[attr-defined]
+            status, details, report, cmd = validate_matrix.run_citydoctor(  # type: ignore[attr-defined]
                 f, reports_dir=args.reports_dir, config_path=None
             )
-            vrows.append(validate_matrix.Row(f, ftype, "CityDoctorValidation", status, details, _rel(Path(report)) if report else ""))  # type: ignore[attr-defined]
+            vrows.append(validate_matrix.Row(f, ftype, "CityDoctorValidation", status, details, _rel(Path(report)) if report else "", cmd))  # type: ignore[attr-defined]
         else:
             vrows.append(validate_matrix.Row(f, ftype, "-", "SKIP", "not CityJSON", ""))  # type: ignore[attr-defined]
 

@@ -55,6 +55,7 @@ class Row:
     result: str
     details: str
     report: str
+    command: str = ""
 
 
 def _md_escape(s: str) -> str:
@@ -127,10 +128,15 @@ def _extract_report_details(report: str, status: str) -> str:
         issue = _extract_section_issue(report, "json_syntax")
         if issue:
             return issue
-        # Fallback: last non-empty line.
+        # Fallback: last meaningful line.
         for ln in reversed(report.splitlines()):
-            if ln.strip():
-                return _shorten(ln)
+            s = ln.strip()
+            if not s:
+                continue
+            # Skip separator/summary lines
+            if s.startswith("===") or s.startswith("---") or s.startswith("=====") or "File is invalid" in s:
+                continue
+            return _shorten(s)
         return "invalid"
     return "unknown"
 
@@ -250,9 +256,9 @@ def run_cjio_validate(
     cjio_bin: str | None,
     reports_dir: Path | None,
     ignore_duplicate_keys: bool,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     if not cjio_bin:
-        return "SKIP", "cjio not found", ""
+        return "SKIP", "cjio not found", "", ""
 
     with tempfile.TemporaryDirectory(prefix="validate_matrix_") as d:
         tmpdir = Path(d)
@@ -261,7 +267,7 @@ def run_cjio_validate(
                 path, cjio_bin=cjio_bin, ignore_duplicate_keys=ignore_duplicate_keys, tmpdir=tmpdir
             )
         except Exception as exc:
-            return "FAIL", f"cjio upgrade failed: {exc}", ""
+            return "FAIL", f"cjio upgrade failed: {exc}", "", ""
 
         cmd = [cjio_bin]
         if ignore_duplicate_keys:
@@ -270,12 +276,13 @@ def run_cjio_validate(
         code, out_text = _run(cmd)
 
         # cjio sometimes prints errors but returns 0; detect that.
+        cmd_str = " ".join(cmd)
         if "Can't extract `str` to `Vec`" in out_text:
-            return "FAIL", "cjio validate hit cjvalpy API mismatch (run scripts/fix_cjio_validate.py)", ""
+            return "FAIL", "cjio validate hit cjvalpy API mismatch (run scripts/fix_cjio_validate.py)", "", cmd_str
         if "Error:" in out_text or "Traceback" in out_text:
             # Keep the first line after 'Error:' if possible.
             msg = out_text.strip().splitlines()[-1] if out_text.strip() else f"exit {code}"
-            return "FAIL", msg, _write_report(reports_dir, path.stem, ".cjio_validate.txt", out_text)
+            return "FAIL", msg, _write_report(reports_dir, path.stem, ".cjio_validate.txt", out_text), cmd_str
 
         status = _classify_cjval_report(out_text)
         details = _extract_report_details(out_text, status)
@@ -285,17 +292,18 @@ def run_cjio_validate(
             details = (out_text.strip().splitlines()[-1] if out_text.strip() else "no output")[:200]
 
         report_path = _write_report(reports_dir, path.stem, ".cjio_validate.txt", out_text)
+        cmd_str = " ".join(cmd)
         if code != 0 and status == "PASS":
             # Unusual, but be conservative.
-            return "FAIL", f"cjio exited {code}", report_path
-        return status, details, report_path
+            return "FAIL", f"cjio exited {code}", report_path, cmd_str
+        return status, details, report_path, cmd_str
 
 
-def run_cjvalpy_validate(path: Path, *, python_bin: str | None, reports_dir: Path | None) -> tuple[str, str, str]:
+def run_cjvalpy_validate(path: Path, *, python_bin: str | None, reports_dir: Path | None) -> tuple[str, str, str, str]:
     if not python_bin:
-        return "SKIP", "cjvalpy not available", ""
+        return "SKIP", "cjvalpy not available", "", ""
 
-    code = textwrap.dedent(
+    code_script = textwrap.dedent(
         r"""
         import json
         import urllib.request
@@ -319,23 +327,29 @@ def run_cjvalpy_validate(path: Path, *, python_bin: str | None, reports_dir: Pat
                 url = ext.get("url")
                 if not url:
                     continue
-                with urllib.request.urlopen(url) as f:
-                    js.append(f.read().decode("utf-8"))
+                try:
+                    with urllib.request.urlopen(url) as f:
+                        js.append(f.read().decode("utf-8"))
+                except Exception:
+                    pass
 
         v = cjvalpy.CJValidator(js)
         v.validate()
         print(v.get_report())
         """
     ).strip()
-    code, out_text = _run([python_bin, "-c", code, str(path)])
-    if code != 0:
+    full_cmd = [python_bin, "-c", code_script, str(path)]
+    code_ret, out_text = _run(full_cmd)
+    cmd_str = f"{python_bin} -c '...' {path}"
+    
+    if code_ret != 0:
         report_path = _write_report(reports_dir, path.stem, ".cjvalpy_validate.txt", out_text)
-        return "FAIL", out_text.strip().splitlines()[-1] if out_text.strip() else "cjvalpy failed", report_path
+        return "FAIL", out_text.strip().splitlines()[-1] if out_text.strip() else "cjvalpy failed", report_path, cmd_str
 
     status = _classify_cjval_report(out_text)
     details = _extract_report_details(out_text, status)
     report_path = _write_report(reports_dir, path.stem, ".cjvalpy_validate.txt", out_text)
-    return status, details, report_path
+    return status, details, report_path, cmd_str
 
 
 def _load_prepare_cityjson_for_import():
@@ -348,18 +362,19 @@ def _load_prepare_cityjson_for_import():
     return module.prepare_cityjson_for_import
 
 
-def run_import_prep(path: Path, *, allow_textures: bool) -> tuple[str, str, str]:
+def run_import_prep(path: Path, *, allow_textures: bool) -> tuple[str, str, str, str]:
     try:
         prepare = _load_prepare_cityjson_for_import()
         ok, msg, _data, changed = prepare(path, allow_textures=allow_textures, write_back=False)
     except Exception as exc:
-        return "FAIL", f"exception: {exc}", ""
+        return "FAIL", f"exception: {exc}", "", ""
 
+    cmd_str = f"prepare_cityjson_for_import({path.name}, allow_textures={allow_textures})"
     if not ok:
-        return "FAIL", msg, ""
+        return "FAIL", msg, "", cmd_str
     if changed:
-        return "WARN", "would modify a copy for Blender import stability", ""
-    return "PASS", "no changes needed", ""
+        return "WARN", "would modify a copy for Blender import stability", "", cmd_str
+    return "PASS", "no changes needed", "", cmd_str
 
 
 def run_citydoctor(
@@ -367,9 +382,9 @@ def run_citydoctor(
     *,
     reports_dir: Path | None,
     config_path: Path | None,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     if path.suffix.lower() != ".gml":
-        return "SKIP", "not a .gml file", ""
+        return "SKIP", "not a .gml file", "", ""
 
     if os.name == "nt":
         citydoctor_root = ROOT / "CityDoctorValidation-3.17.3-win"
@@ -389,11 +404,11 @@ def run_citydoctor(
             java_bin = alt_java
             cp_sep = ":" if os.name != "nt" else ";"
         else:
-            return "SKIP", "CityDoctorValidation runtime not found", ""
+            return "SKIP", "CityDoctorValidation runtime not found", "", ""
 
     cfg = config_path or (citydoctor_root / "testConfigWithStreaming.yml")
     if not cfg.exists():
-        return "SKIP", f"missing config: {cfg}", ""
+        return "SKIP", f"missing config: {cfg}", "", ""
 
     if reports_dir is None:
         tmpdir = Path(tempfile.mkdtemp(prefix="citydoctor_"))
@@ -418,11 +433,12 @@ def run_citydoctor(
         "-xmlReport",
         str(out_xml),
     ]
+    cmd_str = " ".join(cmd)
     code, out_text = _run(cmd, timeout_s=1800)
     # CityDoctorValidation tends to exit 0 even on exceptions; we rely on the XML report for classification.
     report_path = str(out_xml) if out_xml.exists() else ""
     if not out_xml.exists():
-        return "FAIL", (out_text.strip().splitlines()[-1] if out_text.strip() else f"exit {code}"), report_path
+        return "FAIL", (out_text.strip().splitlines()[-1] if out_text.strip() else f"exit {code}"), report_path, cmd_str
 
     try:
         ns = {"cd": "http://www.citydoctor.eu"}
@@ -437,12 +453,12 @@ def run_citydoctor(
         total = sum(errors.values())
         unknown = errors.get("Unknown_error", 0)
         if unknown:
-            return "WARN", f"{total} errors (Unknown_error={unknown})", report_path
+            return "WARN", f"{total} errors (Unknown_error={unknown})", report_path, cmd_str
         if total:
-            return "WARN", f"{total} errors", report_path
-        return "PASS", "no errors reported", report_path
+            return "WARN", f"{total} errors", report_path, cmd_str
+        return "PASS", "no errors reported", report_path, cmd_str
     except Exception as exc:
-        return "WARN", f"report generated but parse failed: {exc}", report_path
+        return "WARN", f"report generated but parse failed: {exc}", report_path, cmd_str
 
 
 def detect_file_type(path: Path) -> str:
@@ -500,6 +516,8 @@ def render_table(rows: list[Row]) -> str:
             )
             + " |"
         )
+        if r.command:
+            lines.append(f"| | | | | **Cmd:** `{_md_escape(r.command)}` | |")
     return "\n".join(lines) + "\n"
 
 
