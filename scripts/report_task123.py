@@ -215,7 +215,8 @@ def _normalize_cityjson_to_v2(
     if ignore_duplicate_keys:
         cmd.append("--ignore_duplicate_keys")
     cmd += [str(path), "upgrade", "save", str(out_path)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
     if proc.returncode != 0 or not out_path.exists():
         msg = (proc.stdout or "") + (proc.stderr or "")
         return path, f"v2 normalize failed: {_shorten(msg or f'exit {proc.returncode}', 120)}"
@@ -323,6 +324,16 @@ def main() -> None:
     except Exception:
         pass
     validation_md = validate_matrix.render_table(vrows)  # type: ignore[attr-defined]
+    
+    # Custom status summary for validation
+    fail_count = sum(1 for r in vrows if r.result == "FAIL")
+    warn_count = sum(1 for r in vrows if r.result == "WARN")
+    if fail_count:
+        val_status = f"🔴 {fail_count} failures"
+    elif warn_count:
+        val_status = f"🟡 {warn_count} warnings"
+    else:
+        val_status = "🟢 all passed"
 
     # --- Normalize to v2.0 for comparisons (optional) ---
     norm_notes: dict[Path, str] = {}
@@ -508,6 +519,7 @@ def main() -> None:
 
     md = (
         "# Task 1–2–3 Report\n\n"
+        f"**Overall Validation Status:** {val_status}\n\n"
         "## Inputs\n\n"
         + input_md
         + "\n## Version Normalization (for comparisons)\n\n"
@@ -525,6 +537,18 @@ def main() -> None:
         + "\n## Fix Hints\n\n"
         + fixes_md
     )
+    
+    if len(cityjson_indices) >= 2:
+        # Append the detailed first-pair comparison if available
+        try:
+            a_idx, b_idx = cityjson_indices[0], cityjson_indices[1]
+            a_cmp_path = norm_paths.get(files[a_idx], files[a_idx])
+            b_cmp_path = norm_paths.get(files[b_idx], files[b_idx])
+            a = compare_cityjson.load_cityjson(a_cmp_path)
+            b = compare_cityjson.load_cityjson(b_cmp_path)
+            md += "\n\n---\n\n" + compare_cityjson.render_comparison_markdown(rep)
+        except Exception as exc:
+            md += f"\n\n---\n\n*Note: Detailed comparison failed: {exc}*"
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -534,4 +558,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if os.name == "nt":
+        # Force UTF-8 for Windows console output
+        import sys
+        
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
     main()

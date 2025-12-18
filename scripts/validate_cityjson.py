@@ -49,17 +49,28 @@ def _safe_exists(path: Path) -> bool:
 
 def _detect_cjio_bin() -> str | None:
     # Prefer CJIO_BIN env, then local venvs, then PATH.
+    # Priority 1: CJIO_BIN env
     env_bin = os.environ.get("CJIO_BIN")
     if env_bin and _safe_exists(Path(env_bin)):
         return env_bin
-    for candidate in [
-        ROOT / ".venv" / "bin" / "cjio",
-        ROOT / ".venv" / "Scripts" / "cjio.exe",
-        ROOT / ".venv" / "Scripts" / "cjio",
-        ROOT / ".venv-cjio" / "bin" / "cjio",
-        ROOT / ".venv-cjio" / "Scripts" / "cjio.exe",
-        ROOT / ".venv-cjio" / "Scripts" / "cjio",
-    ]:
+        
+    candidates = []
+    if os.name == "nt":
+        # Windows candidates
+        candidates += [
+            ROOT / ".venv-win" / "Scripts" / "cjio.exe",
+            ROOT / ".venv-win" / "Scripts" / "cjio",
+            ROOT / ".venv" / "Scripts" / "cjio.exe",
+            ROOT / ".venv" / "Scripts" / "cjio",
+        ]
+    else:
+        # Linux/Unix candidates
+        candidates += [
+            ROOT / ".venv" / "bin" / "cjio",
+            ROOT / ".venv-cjio" / "bin" / "cjio",
+        ]
+        
+    for candidate in candidates:
         if _safe_exists(candidate):
             return str(candidate)
     return shutil.which("cjio")
@@ -76,16 +87,22 @@ def _detect_cjvalpy_python() -> str | None:
     env_py = os.environ.get("CJVALPY_PYTHON")
     if env_py and _safe_exists(Path(env_py)):
         return env_py
-    for candidate in [
-        ROOT / ".venv" / "bin" / "python",
-        ROOT / ".venv" / "bin" / "python3",
-        ROOT / ".venv" / "Scripts" / "python.exe",
-        ROOT / ".venv" / "Scripts" / "python",
-        ROOT / ".venv-cjio" / "bin" / "python",
-        ROOT / ".venv-cjio" / "bin" / "python3",
-        ROOT / ".venv-cjio" / "Scripts" / "python.exe",
-        ROOT / ".venv-cjio" / "Scripts" / "python",
-    ]:
+        
+    candidates = []
+    if os.name == "nt":
+        candidates += [
+            ROOT / ".venv-win" / "Scripts" / "python.exe",
+            ROOT / ".venv-win" / "Scripts" / "python",
+            ROOT / ".venv" / "Scripts" / "python.exe",
+            ROOT / ".venv" / "Scripts" / "python",
+        ]
+    else:
+        candidates += [
+            ROOT / ".venv" / "bin" / "python",
+            ROOT / ".venv" / "bin" / "python3",
+        ]
+
+    for candidate in candidates:
         if _safe_exists(candidate):
             return str(candidate)
     return None
@@ -107,6 +124,10 @@ def _run_cjvalpy(python_bin: str, path: Path) -> str:
         import json
         import urllib.request
         from pathlib import Path
+        import sys
+        
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
 
         import cjvalpy
 
@@ -130,7 +151,8 @@ def _run_cjvalpy(python_bin: str, path: Path) -> str:
         print(v.get_report())
         """
     ).strip()
-    result = subprocess.run([python_bin, "-c", code, str(path)], capture_output=True, text=True)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run([python_bin, "-c", code, str(path)], capture_output=True, text=True, encoding="utf-8", env=env)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"cjvalpy exited {result.returncode}")
     return result.stdout
@@ -144,7 +166,8 @@ def _upgrade_to_v2(cjio_bin: str, src: Path, *, ignore_duplicate_keys: bool) -> 
     if ignore_duplicate_keys:
         cmd.append("--ignore_duplicate_keys")
     cmd += [str(src), "upgrade", "save", str(out_path)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
     if result.returncode != 0:
         out_path.unlink(missing_ok=True)
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"cjio exited {result.returncode}")
@@ -237,4 +260,10 @@ def main():
 
 
 if __name__ == "__main__":
+    if os.name == "nt":
+        # Force UTF-8 for Windows console output
+        import sys
+        
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
     main()

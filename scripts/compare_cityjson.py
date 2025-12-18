@@ -635,8 +635,84 @@ def print_diff(report: dict[str, Any]) -> None:
                 row = sem_assign[k]
                 print(f"  - assigned {k}: {row['a']} -> {row['b']} (Δ {row['delta']})")
 
+def render_comparison_markdown(report: dict[str, Any]) -> str:
+    """Render the comparison report as a beautiful colorized Markdown document."""
+    a = report["a"]
+    b = report["b"]
+    d = report["delta"]
+    
+    def status_icon(delta: int) -> str:
+        if delta == 0: return "⚪"
+        return "🟢" if delta > 0 else "🔴"
 
-def parse_args() -> argparse.Namespace:
+    def perc(a: int, b: int) -> str:
+        if a == 0:
+            return "N/A" if b == 0 else "+∞%"
+        p = (b - a) / float(a) * 100.0
+        return f"{p:+.1f}%"
+
+    lines = [
+        "# CityJSON Comparison Report",
+        "",
+        "## Summary",
+        "",
+        "| Metric | Base (A) | Export (B) | Delta | Change % | Status |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+    
+    metrics = [
+        ("CityObjects", "cityobjects_total"),
+        ("Vertices", "vertices_count"),
+        ("Geometries", "geometries_total"),
+        ("Surface Primitives", "surface_primitives_total"),
+        ("Holes", "holes_total"),
+        ("Textures", "appearance_textures"),
+    ]
+    
+    for label, key in metrics:
+        va, vb = d[key]["a"], d[key]["b"]
+        delta = vb - va
+        lines.append(f"| {label} | {va} | {vb} | {delta:+d} | {perc(va, vb)} | {status_icon(delta)} |")
+        
+    lines.extend([
+        "",
+        "## Object Type Changes",
+        "",
+        "| Type | Base | Export | Delta | Change % |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+    ])
+    
+    for k, v in d.get("cityobjects_by_type", {}).items():
+        lines.append(f"| {k} | {v['a']} | {v['b']} | {v['delta']:+d} | {perc(v['a'], v['b'])} |")
+        
+    lines.extend([
+        "",
+        "## Semantic Changes",
+        "",
+        "| Semantic | Base | Export | Delta | Change % | Status |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ])
+    
+    sem_assign = d.get("semantic_assignments_by_type", {})
+    # Expanded list for more detail
+    for k in ["Window", "Door", "RoofSurface", "WallSurface", "GroundSurface", "ClosureSurface", "OuterCeilingSurface", "OuterFloorSurface"]:
+        if k in sem_assign:
+            v = sem_assign[k]
+            delta = v["delta"]
+            lines.append(f"| {k} | {v['a']} | {v['b']} | {delta:+d} | {perc(v['a'], v['b'])} | {status_icon(delta)} |")
+            
+    if report.get("id_diff", {}).get("missing_in_b_count"):
+        lines.extend([
+            "",
+            "### Missing IDs (Data Loss ⚠️)",
+            "",
+            f"**Count:** {report['id_diff']['missing_in_b_count']}",
+            "",
+            "Sample:",
+            ", ".join(f"`{i}`" for i in report['id_diff']['missing_in_b_sample'])
+        ])
+
+    return "\n".join(lines)
     parser = argparse.ArgumentParser(description="Compute CityJSON stats or diff two CityJSON files.")
     parser.add_argument("file_a", type=Path, help="First CityJSON file (or the only file for stats)")
     parser.add_argument("file_b", nargs="?", type=Path, help="Second CityJSON file (optional)")

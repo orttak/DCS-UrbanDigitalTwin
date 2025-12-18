@@ -139,14 +139,22 @@ def _detect_cjio_bin() -> str | None:
     env_bin = os.environ.get("CJIO_BIN")
     if env_bin and _safe_exists(Path(env_bin)):
         return env_bin
-    for candidate in [
-        ROOT / ".venv" / "bin" / "cjio",
-        ROOT / ".venv" / "Scripts" / "cjio.exe",
-        ROOT / ".venv" / "Scripts" / "cjio",
-        ROOT / ".venv-cjio" / "bin" / "cjio",
-        ROOT / ".venv-cjio" / "Scripts" / "cjio.exe",
-        ROOT / ".venv-cjio" / "Scripts" / "cjio",
-    ]:
+        
+    candidates = []
+    if os.name == "nt":
+        candidates += [
+            ROOT / ".venv-win" / "Scripts" / "cjio.exe",
+            ROOT / ".venv-win" / "Scripts" / "cjio",
+            ROOT / ".venv" / "Scripts" / "cjio.exe",
+            ROOT / ".venv" / "Scripts" / "cjio",
+        ]
+    else:
+        candidates += [
+            ROOT / ".venv" / "bin" / "cjio",
+            ROOT / ".venv-cjio" / "bin" / "cjio",
+        ]
+
+    for candidate in candidates:
         if _safe_exists(candidate):
             return str(candidate)
     return shutil.which("cjio")
@@ -157,22 +165,27 @@ def _detect_cjvalpy_python() -> str | None:
     # Prefer current interpreter when cjvalpy is importable.
     try:
         import cjvalpy  # noqa: F401
-
         return sys.executable
     except Exception:
         pass
     if env_py and _safe_exists(Path(env_py)):
         return env_py
-    for candidate in [
-        ROOT / ".venv" / "bin" / "python",
-        ROOT / ".venv" / "bin" / "python3",
-        ROOT / ".venv" / "Scripts" / "python.exe",
-        ROOT / ".venv" / "Scripts" / "python",
-        ROOT / ".venv-cjio" / "bin" / "python",
-        ROOT / ".venv-cjio" / "bin" / "python3",
-        ROOT / ".venv-cjio" / "Scripts" / "python.exe",
-        ROOT / ".venv-cjio" / "Scripts" / "python",
-    ]:
+        
+    candidates = []
+    if os.name == "nt":
+        candidates += [
+            ROOT / ".venv-win" / "Scripts" / "python.exe",
+            ROOT / ".venv-win" / "Scripts" / "python",
+            ROOT / ".venv" / "Scripts" / "python.exe",
+            ROOT / ".venv" / "Scripts" / "python",
+        ]
+    else:
+        candidates += [
+            ROOT / ".venv" / "bin" / "python",
+            ROOT / ".venv" / "bin" / "python3",
+        ]
+
+    for candidate in candidates:
         if _safe_exists(candidate):
             return str(candidate)
     return None
@@ -198,7 +211,8 @@ def _write_report(reports_dir: Path | None, stem: str, suffix: str, content: str
 
 
 def _run(cmd: list[str], timeout_s: int = 600) -> tuple[int, str]:
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env, timeout=timeout_s)
     out = (result.stdout or "") + (result.stderr or "")
     return result.returncode, out
 
@@ -286,6 +300,10 @@ def run_cjvalpy_validate(path: Path, *, python_bin: str | None, reports_dir: Pat
         import json
         import urllib.request
         from pathlib import Path
+        import sys
+
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
 
         import cjvalpy
 
@@ -309,9 +327,8 @@ def run_cjvalpy_validate(path: Path, *, python_bin: str | None, reports_dir: Pat
         print(v.get_report())
         """
     ).strip()
-    proc = subprocess.run([python_bin, "-c", code, str(path)], capture_output=True, text=True)
-    out_text = (proc.stdout or "") + (proc.stderr or "")
-    if proc.returncode != 0:
+    code, out_text = _run([python_bin, "-c", code, str(path)])
+    if code != 0:
         report_path = _write_report(reports_dir, path.stem, ".cjvalpy_validate.txt", out_text)
         return "FAIL", out_text.strip().splitlines()[-1] if out_text.strip() else "cjvalpy failed", report_path
 
@@ -566,4 +583,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if os.name == "nt":
+        # Force UTF-8 for Windows console output
+        import sys
+        sys.stdout.reconfigure(encoding="utf-8")
     main()
