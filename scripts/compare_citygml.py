@@ -93,7 +93,11 @@ def _parse_corner(text: str | None) -> list[float] | None:
     if len(parts) < 2:
         return None
     try:
-        return [float(p) for p in parts[:3]]
+        # CityGML envelopes are usually 3D, but some datasets may be 2D.
+        vals = [float(p) for p in parts[:3]]
+        if len(vals) == 2:
+            vals.append(0.0)
+        return vals
     except Exception:
         return None
 
@@ -103,8 +107,9 @@ def compute_citygml_stats(path: Path) -> dict[str, Any]:
     counts_key: Counter[str] = Counter()
     counts_lod: Counter[str] = Counter()
     total_elements = 0
-    lower_corner = None
-    upper_corner = None
+    envelopes_count = 0
+    bbox_min = None
+    bbox_max = None
     root_tag = None
 
     context = ET.iterparse(path, events=("start", "end"))
@@ -122,10 +127,22 @@ def compute_citygml_stats(path: Path) -> dict[str, Any]:
         if LOD_RE.match(name):
             counts_lod[name] += 1
 
-        if name == "lowerCorner" and lower_corner is None:
-            lower_corner = _parse_corner(elem.text)
-        if name == "upperCorner" and upper_corner is None:
-            upper_corner = _parse_corner(elem.text)
+        if name == "Envelope":
+            envelopes_count += 1
+        if name == "lowerCorner":
+            corner = _parse_corner(elem.text)
+            if corner is not None:
+                if bbox_min is None:
+                    bbox_min = corner
+                else:
+                    bbox_min = [min(bbox_min[i], corner[i]) for i in range(3)]
+        if name == "upperCorner":
+            corner = _parse_corner(elem.text)
+            if corner is not None:
+                if bbox_max is None:
+                    bbox_max = corner
+                else:
+                    bbox_max = [max(bbox_max[i], corner[i]) for i in range(3)]
 
         elem.clear()
 
@@ -136,9 +153,8 @@ def compute_citygml_stats(path: Path) -> dict[str, Any]:
         "total_elements": total_elements,
         "key_counts": dict(counts_key),
         "lod_counts": dict(counts_lod),
-        "bbox_envelope": {"lowerCorner": lower_corner, "upperCorner": upper_corner}
-        if lower_corner or upper_corner
-        else None,
+        "envelopes_count": envelopes_count,
+        "bbox_envelope_global": {"lowerCorner": bbox_min, "upperCorner": bbox_max} if bbox_min or bbox_max else None,
         "top_tags": dict(counts_all.most_common(25)),
     }
     return stats
@@ -182,9 +198,12 @@ def print_stats(stats: dict[str, Any]) -> None:
     print(f"SHA256: {stats['sha256']}")
     print(f"Root tag: {stats.get('root_tag')}")
     print(f"Total elements: {stats.get('total_elements')}")
-    bbox = stats.get("bbox_envelope")
+    bbox = stats.get("bbox_envelope_global")
     if bbox:
-        print(f"Envelope: lower={bbox.get('lowerCorner')} upper={bbox.get('upperCorner')}")
+        print(
+            f"Envelope (global, from {stats.get('envelopes_count', 0)} Envelope tags): "
+            f"lower={bbox.get('lowerCorner')} upper={bbox.get('upperCorner')}"
+        )
     key_counts = stats.get("key_counts", {})
     if key_counts:
         print("Key counts:")
@@ -244,4 +263,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
