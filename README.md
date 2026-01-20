@@ -94,7 +94,7 @@ Run this command to export your city data to a file named `my_city.json` in your
 ```bash
 docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson \
   -H citydb -d citydb -u postgres -p postgres \
-  --cityjson-version 1.1 --no-json-lines \
+  --cityjson-version 2.0 --no-json-lines \
   -o /input/my_city.json
 ```
 
@@ -139,7 +139,7 @@ docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-t
 ```bash
 docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson \
   -H citydb -d citydb -u postgres -p postgres \
-  --cityjson-version 1.1 --no-json-lines \
+  --cityjson-version 2.0 --no-json-lines \
   -o /input/my_city.json
 ```
 

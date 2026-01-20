@@ -38,6 +38,23 @@ def main():
         print(f"Input file not found: {args.input}")
         sys.exit(1)
 
+    import sys
+    import os
+    repo_root = Path(__file__).parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.append(str(repo_root))
+
+    import bpy
+    try:
+        # Try to enable if registered, or just import
+        if "CityJSONEditor" not in bpy.context.preferences.addons:
+            bpy.ops.preferences.addon_enable(module="CityJSONEditor")
+    except Exception as e:
+        print(f"Warning: Could not enable addon via Blender ops: {e}. Attempting manual register...")
+        # Fallback: import directly and register
+        import CityJSONEditor
+        CityJSONEditor.register()
+
     # Import
     res = bpy.ops.cityjson.import_file(filepath=str(args.input), texture_setting=not args.no_textures)
     if "FINISHED" not in res:
