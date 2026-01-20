@@ -612,7 +612,7 @@ def print_diff(report: dict[str, Any]) -> None:
         f"(vertices-texture: {a['appearance_vertices_texture']} -> {b['appearance_vertices_texture']})"
     )
     if report["delta"].get("bbox_delta_max_abs") is not None:
-        print(f"BBox max |Δ|: {report['delta']['bbox_delta_max_abs']}")
+        print(f"BBox max |Delta|: {report['delta']['bbox_delta_max_abs']}")
     id_diff = report.get("id_diff", {})
     print(
         f"ID diff: missing_in_B={id_diff.get('missing_in_b_count')} "
@@ -713,6 +713,8 @@ def render_comparison_markdown(report: dict[str, Any]) -> str:
         ])
 
     return "\n".join(lines)
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute CityJSON stats or diff two CityJSON files.")
     parser.add_argument("file_a", type=Path, help="First CityJSON file (or the only file for stats)")
     parser.add_argument("file_b", nargs="?", type=Path, help="Second CityJSON file (optional)")
@@ -728,6 +730,7 @@ def render_comparison_markdown(report: dict[str, Any]) -> str:
         help="Check that appearance texture image files exist next to the JSON file",
     )
     return parser.parse_args()
+
 
 
 def main() -> None:
@@ -763,4 +766,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    if os.name == "nt":
+        sys.stdout.reconfigure(encoding="utf-8")
     main()
+

@@ -262,4 +262,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    if os.name == "nt":
+        sys.stdout.reconfigure(encoding="utf-8")
     main()

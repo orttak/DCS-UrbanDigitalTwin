@@ -1,0 +1,261 @@
+{
+  "a": {
+    "path": "data\\FZK-Haus-LoD2-KIT-IAI-KHH-B36-V1.gml",
+    "sha256": "d13b2b159fe246ab087fa90370a0e2da0ba63da6ad2d52afa444e9437e21023f",
+    "root_tag": "{http://www.opengis.net/citygml/2.0}CityModel",
+    "total_elements": 149,
+    "key_counts": {
+      "lowerCorner": 1,
+      "upperCorner": 1,
+      "Envelope": 1,
+      "boundedBy": 8,
+      "CompositeSurface": 1,
+      "Solid": 1,
+      "pos": 37,
+      "LinearRing": 7,
+      "Polygon": 7,
+      "MultiSurface": 7,
+      "WallSurface": 4,
+      "RoofSurface": 2,
+      "GroundSurface": 1,
+      "Building": 1,
+      "cityObjectMember": 1,
+      "CityModel": 1
+    },
+    "lod_counts": {
+      "lod2Solid": 1,
+      "lod2MultiSurface": 7
+    },
+    "envelopes_count": 1,
+    "bbox_envelope_global": {
+      "lowerCorner": [
+        457842.0,
+        5439083.0,
+        111.8
+      ],
+      "upperCorner": [
+        457854.0,
+        5439093.0,
+        118.317669
+      ]
+    },
+    "top_tags": {
+      "pos": 37,
+      "surfaceMember": 14,
+      "name": 9,
+      "boundedBy": 8,
+      "exterior": 8,
+      "LinearRing": 7,
+      "Polygon": 7,
+      "MultiSurface": 7,
+      "lod2MultiSurface": 7,
+      "WallSurface": 4,
+      "value": 3,
+      "description": 2,
+      "stringAttribute": 2,
+      "RoofSurface": 2,
+      "lowerCorner": 1,
+      "upperCorner": 1,
+      "Envelope": 1,
+      "creationDate": 1,
+      "relativeToTerrain": 1,
+      "measureAttribute": 1,
+      "class": 1,
+      "function": 1,
+      "usage": 1,
+      "yearOfConstruction": 1,
+      "roofType": 1
+    }
+  },
+  "b": {
+    "path": "data\\export\\FZK_LOD2_export1.gml",
+    "sha256": "5f7a80af192d054e44c44105fc87d93b182a86bae71761522739237e1be15fb9",
+    "root_tag": "{http://www.opengis.net/citygml/3.0}CityModel",
+    "total_elements": 129,
+    "key_counts": {
+      "lowerCorner": 1,
+      "upperCorner": 1,
+      "Envelope": 1,
+      "boundedBy": 1,
+      "posList": 7,
+      "LinearRing": 7,
+      "Polygon": 7,
+      "MultiSurface": 7,
+      "WallSurface": 4,
+      "RoofSurface": 2,
+      "GroundSurface": 1,
+      "Solid": 1,
+      "Building": 1,
+      "cityObjectMember": 1,
+      "CityModel": 1
+    },
+    "lod_counts": {
+      "lod2MultiSurface": 7,
+      "lod2Solid": 1
+    },
+    "envelopes_count": 1,
+    "bbox_envelope_global": {
+      "lowerCorner": [
+        457842.0,
+        5439083.0,
+        111.8
+      ],
+      "upperCorner": [
+        457854.0,
+        5439093.0,
+        118.317691453624
+      ]
+    },
+    "top_tags": {
+      "surfaceMember": 14,
+      "name": 11,
+      "exterior": 8,
+      "posList": 7,
+      "LinearRing": 7,
+      "Polygon": 7,
+      "MultiSurface": 7,
+      "lod2MultiSurface": 7,
+      "boundary": 7,
+      "value": 4,
+      "WallSurface": 4,
+      "genericAttribute": 3,
+      "description": 2,
+      "StringAttribute": 2,
+      "RoofSurface": 2,
+      "NameElement": 2,
+      "Address": 2,
+      "lowerCorner": 1,
+      "upperCorner": 1,
+      "Envelope": 1,
+      "boundedBy": 1,
+      "creationDate": 1,
+      "relativeToTerrain": 1,
+      "MeasureAttribute": 1,
+      "GroundSurface": 1
+    }
+  },
+  "delta": {
+    "total_elements": {
+      "a": 149,
+      "b": 129
+    },
+    "key_counts": {
+      "Building": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "CityModel": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "CompositeSurface": {
+        "a": 1,
+        "b": 0,
+        "delta": -1,
+        "loss_pct": 1.0
+      },
+      "Envelope": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "GroundSurface": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "LinearRing": {
+        "a": 7,
+        "b": 7,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "MultiSurface": {
+        "a": 7,
+        "b": 7,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "Polygon": {
+        "a": 7,
+        "b": 7,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "RoofSurface": {
+        "a": 2,
+        "b": 2,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "Solid": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "WallSurface": {
+        "a": 4,
+        "b": 4,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "boundedBy": {
+        "a": 8,
+        "b": 1,
+        "delta": -7,
+        "loss_pct": 0.875
+      },
+      "cityObjectMember": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "lowerCorner": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "pos": {
+        "a": 37,
+        "b": 0,
+        "delta": -37,
+        "loss_pct": 1.0
+      },
+      "posList": {
+        "a": 0,
+        "b": 7,
+        "delta": 7,
+        "loss_pct": null
+      },
+      "upperCorner": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      }
+    },
+    "lod_counts": {
+      "lod2MultiSurface": {
+        "a": 7,
+        "b": 7,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "lod2Solid": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      }
+    }
+  }
+}

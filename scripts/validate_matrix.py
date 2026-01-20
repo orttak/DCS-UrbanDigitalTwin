@@ -386,25 +386,33 @@ def run_citydoctor(
     if path.suffix.lower() != ".gml":
         return "SKIP", "not a .gml file", "", ""
 
-    if os.name == "nt":
-        citydoctor_root = ROOT / "CityDoctorValidation-3.17.3-win"
-        java_bin = citydoctor_root / "runtime" / "bin" / "java.exe"
-        cp_sep = ";"
-    else:
-        citydoctor_root = ROOT / "CityDoctorValidation-3.17.3-lin"
-        java_bin = citydoctor_root / "runtime" / "bin" / "java"
-        cp_sep = ":"
-
-    if not citydoctor_root.exists() or not java_bin.exists():
-        # Fallback: try the other distribution.
-        alt_root = ROOT / ("CityDoctorValidation-3.17.3-lin" if os.name == "nt" else "CityDoctorValidation-3.17.3-win")
-        alt_java = alt_root / "runtime" / "bin" / ("java.exe" if os.name != "nt" else "java")
-        if alt_root.exists() and alt_java.exists():
-            citydoctor_root = alt_root
-            java_bin = alt_java
-            cp_sep = ":" if os.name != "nt" else ";"
+    candidate_roots = [
+        Path(r"D:\DCS\CityDoctorValidation-3.18.1-win"),
+        ROOT / "CityDoctorValidation-3.17.3-win",
+        ROOT / "CityDoctorValidation-3.17.3-lin",
+    ]
+    
+    citydoctor_root = None
+    java_bin = None
+    
+    for r in candidate_roots:
+        if not r.exists():
+            continue
+        
+        # Check bin location (varies by version/OS)
+        j = r / "runtime" / "bin" / ("java.exe" if os.name == "nt" else "java")
+        if not j.exists():
+            # Try searching deeper or standard locations if bundled runtime missing? 
+            # For now assume bundled runtime structure.
+            pass
         else:
-            return "SKIP", "CityDoctorValidation runtime not found", "", ""
+            citydoctor_root = r
+            java_bin = j
+            cp_sep = ";" if os.name == "nt" else ":"
+            break
+            
+    if not citydoctor_root or not java_bin:
+        return "SKIP", "CityDoctorValidation runtime not found", "", ""
 
     cfg = config_path or (citydoctor_root / "testConfigWithStreaming.yml")
     if not cfg.exists():
@@ -566,26 +574,24 @@ def main() -> None:
 
         ftype = detect_file_type(path)
         if ftype == "CityJSON":
-            status, details, report = run_cjio_validate(
+            status, details, report, cmd = run_cjio_validate(
                 path,
                 cjio_bin=cjio_bin,
                 reports_dir=args.reports_dir,
                 ignore_duplicate_keys=args.ignore_duplicate_keys,
             )
-            rows.append(Row(path, ftype, "cjio validate", status, details, report))
+            rows.append(Row(path, ftype, "cjio validate", status, details, report, cmd))
 
-            status, details, report = run_cjvalpy_validate(
+            status, details, report, cmd = run_cjvalpy_validate(
                 path, python_bin=cjvalpy_python, reports_dir=args.reports_dir
             )
-            rows.append(Row(path, ftype, "cjvalpy", status, details, report))
+            rows.append(Row(path, ftype, "cjvalpy", status, details, report, cmd))
 
-            status, details, report = run_import_prep(path, allow_textures=not args.no_textures)
-            rows.append(Row(path, ftype, "CityJSONEditor prep", status, details, report))
         elif ftype == "CityGML":
-            status, details, report = run_citydoctor(
+            status, details, report, cmd = run_citydoctor(
                 path, reports_dir=args.reports_dir, config_path=args.citydoctor_config
             )
-            rows.append(Row(path, ftype, "CityDoctorValidation", status, details, report))
+            rows.append(Row(path, ftype, "CityDoctorValidation", status, details, report, cmd))
         else:
             rows.append(Row(path, ftype, "-", "SKIP", "unsupported/unknown type", ""))
 
