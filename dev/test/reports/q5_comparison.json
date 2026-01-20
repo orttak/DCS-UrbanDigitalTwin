@@ -1,0 +1,268 @@
+{
+  "a": {
+    "path": "d:\\DCS\\data\\export\\q5_from_db.city.json",
+    "sha256": "1b3f45316a4967587d3c1e0c4c685b7ebf4e54f6a0db8e5a3d9072c7adfb4f6c",
+    "type": "CityJSON",
+    "version": "2.0",
+    "transform": {
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "translate": [
+        457842.0,
+        5439083.0,
+        111.8
+      ]
+    },
+    "cityobjects_total": 1,
+    "cityobjects_by_type": {
+      "Building": 1
+    },
+    "cityobjects_with_geometry": 1,
+    "cityobjects_with_attributes": 1,
+    "cityobjects_with_geographicalExtent": 1,
+    "vertices_count": 10,
+    "vertices_bbox_raw": {
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        12000.0,
+        10000.0,
+        6518.0
+      ]
+    },
+    "vertices_bbox_world": {
+      "min": [
+        457842.0,
+        5439083.0,
+        111.8
+      ],
+      "max": [
+        457854.0,
+        5439093.0,
+        118.318
+      ]
+    },
+    "geometries_total": 1,
+    "geometries_by_type": {
+      "Solid": 1
+    },
+    "geometries_by_lod": {
+      "2": 1
+    },
+    "geometries_by_lod_type": {
+      "2|Solid": 1
+    },
+    "surface_primitives_total": 7,
+    "rings_total": 7,
+    "holes_total": 0,
+    "vertex_references_total": 30,
+    "semantic_defs_by_type": {
+      "WallSurface": 2,
+      "RoofSurface": 1,
+      "GroundSurface": 1
+    },
+    "semantic_assignments_total": 7,
+    "semantic_assignments_by_type": {
+      "<null>": 3,
+      "WallSurface": 2,
+      "RoofSurface": 1,
+      "GroundSurface": 1
+    },
+    "appearance_materials": 0,
+    "appearance_textures": 0,
+    "appearance_vertices_texture": 0,
+    "missing_texture_files_count": 0,
+    "missing_texture_files_sample": [],
+    "geometries_with_texture": 0,
+    "texture_themes": {},
+    "texture_value_entries_nonnull": 0
+  },
+  "b": {
+    "path": "d:\\DCS\\data\\export\\FZK_LOD2_from_blender_edited_to_LOD3.city.json",
+    "sha256": "6472cc26cd0a0702c2578f58efe1188f20b95ade29e4899a74c6763fbb32ffce",
+    "type": "CityJSON",
+    "version": "2.0",
+    "transform": {
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "translate": [
+        457842.0,
+        5439083.0,
+        111.8
+      ]
+    },
+    "cityobjects_total": 1,
+    "cityobjects_by_type": {
+      "Building": 1
+    },
+    "cityobjects_with_geometry": 1,
+    "cityobjects_with_attributes": 1,
+    "cityobjects_with_geographicalExtent": 1,
+    "vertices_count": 10,
+    "vertices_bbox_raw": {
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        12000.0,
+        10000.0,
+        6518.0
+      ]
+    },
+    "vertices_bbox_world": {
+      "min": [
+        457842.0,
+        5439083.0,
+        111.8
+      ],
+      "max": [
+        457854.0,
+        5439093.0,
+        118.318
+      ]
+    },
+    "geometries_total": 1,
+    "geometries_by_type": {
+      "Solid": 1
+    },
+    "geometries_by_lod": {
+      "2": 1
+    },
+    "geometries_by_lod_type": {
+      "2|Solid": 1
+    },
+    "surface_primitives_total": 7,
+    "rings_total": 7,
+    "holes_total": 0,
+    "vertex_references_total": 30,
+    "semantic_defs_by_type": {
+      "WallSurface": 4,
+      "RoofSurface": 2,
+      "GroundSurface": 1
+    },
+    "semantic_assignments_total": 7,
+    "semantic_assignments_by_type": {
+      "WallSurface": 4,
+      "RoofSurface": 2,
+      "GroundSurface": 1
+    },
+    "appearance_materials": 0,
+    "appearance_textures": 0,
+    "appearance_vertices_texture": 0,
+    "missing_texture_files_count": 0,
+    "missing_texture_files_sample": [],
+    "geometries_with_texture": 0,
+    "texture_themes": {},
+    "texture_value_entries_nonnull": 0
+  },
+  "delta": {
+    "cityobjects_total": {
+      "a": 1,
+      "b": 1
+    },
+    "vertices_count": {
+      "a": 10,
+      "b": 10
+    },
+    "geometries_total": {
+      "a": 1,
+      "b": 1
+    },
+    "surface_primitives_total": {
+      "a": 7,
+      "b": 7
+    },
+    "holes_total": {
+      "a": 0,
+      "b": 0
+    },
+    "appearance_textures": {
+      "a": 0,
+      "b": 0
+    },
+    "appearance_vertices_texture": {
+      "a": 0,
+      "b": 0
+    },
+    "bbox_delta_max_abs": 0.0,
+    "cityobjects_by_type": {
+      "Building": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      }
+    },
+    "geometries_by_lod_type": {
+      "2|Solid": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      }
+    },
+    "semantic_defs_by_type": {
+      "GroundSurface": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "RoofSurface": {
+        "a": 1,
+        "b": 2,
+        "delta": 1,
+        "loss_pct": 0.0
+      },
+      "WallSurface": {
+        "a": 2,
+        "b": 4,
+        "delta": 2,
+        "loss_pct": 0.0
+      }
+    },
+    "semantic_assignments_by_type": {
+      "<null>": {
+        "a": 3,
+        "b": 0,
+        "delta": -3,
+        "loss_pct": 1.0
+      },
+      "GroundSurface": {
+        "a": 1,
+        "b": 1,
+        "delta": 0,
+        "loss_pct": 0.0
+      },
+      "RoofSurface": {
+        "a": 1,
+        "b": 2,
+        "delta": 1,
+        "loss_pct": 0.0
+      },
+      "WallSurface": {
+        "a": 2,
+        "b": 4,
+        "delta": 2,
+        "loss_pct": 0.0
+      }
+    }
+  },
+  "id_diff": {
+    "missing_in_b_count": 0,
+    "added_in_b_count": 0,
+    "missing_in_b_sample": [],
+    "added_in_b_sample": []
+  }
+}
