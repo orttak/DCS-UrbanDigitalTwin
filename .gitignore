@@ -6,3 +6,6 @@ CityDoctorValidation-3.17.3-lin/*
 CityDoctorValidation-3.17.3-win/*
 CityDoctorGUI-3.12.1-win/*
 CityDoctorValidation-3.18.1-win/*
+
+# CityJSONEditor uses cjio from root, ignore duplicate copy
+CityJSONEditor/cjio/
