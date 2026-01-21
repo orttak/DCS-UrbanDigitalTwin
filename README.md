@@ -10,25 +10,50 @@ A minimal 3D city "playground" using [3DCityDB](https://www.3dcitydb.org/), Dock
 
 ## Getting Started
 
+### 0. Clone Repository with Submodules
+
+This project uses Git submodules for external tools. After cloning, initialize all submodules:
+
+```bash
+git clone --recursive https://github.com/orttak/DCS-UrbanDigitalTwin.git
+cd DCS-UrbanDigitalTwin
+
+# OR if already cloned:
+git submodule update --init --recursive
+
+# Run setup script to configure submodules:
+./setup_submodules.sh
+```
+
+**Required Submodules:**
+
+- `citydb-tool` - 3DCityDB command-line tool
+- `CityJSONEditor` - CityJSON visualization and editing tool
+- `cjio` - CityJSON I/O library (also used by CityJSONEditor)
+
 ### 1. Database Setup (Docker)
 
 The database runs in a Docker container using the official `3dcitydb/3dcitydb-pg` image.
 
 1.  **Configure Environment Variables**:
     Copy `.env.example` to a new file named `.env` in the root directory:
+
     ```bash
     cp .env.example .env
     ```
+
     You can usually keep the default values for a local playground.
 
 2.  **Start the Database**:
     Run the following command to start the 3DCityDB instance:
+
     ```bash
     docker compose up -d citydb
     ```
-    *   This starts an empty 3DCityDB instance.
-    *   The schema is automatically initialized.
-    *   Data is persisted in the `citydb_data` Docker volume.
+
+    - This starts an empty 3DCityDB instance.
+    - The schema is automatically initialized.
+    - Data is persisted in the `citydb_data` Docker volume.
 
 ### 2. Populating the Database
 
@@ -44,10 +69,12 @@ This repo does not contain city data. You need to import it manually.
     **Example using `citydb-tool` (Docker):**
     1.  You have your data at `D:\Docker\data\6431\6431.gml`.
     2.  Run this command from `D:\Docker`:
+
     ```bash
     docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest import citygml -H citydb -d citydb -u postgres -p postgres /input/6431/6431.gml
     ```
-    *(Note: We use `--network docker_default` so the tool can talk to the database container `citydb`.)*
+
+    _(Note: We use `--network docker_default` so the tool can talk to the database container `citydb`.)_
 
     **Persistence**:
     Once imported, data is stored in the `citydb_data` volume. This is a **Docker-managed volume**, not a folder in your project files. It persists until you explicitly remove it.
@@ -57,20 +84,23 @@ This repo does not contain city data. You need to import it manually.
 The Next.js app connects to the database to list buildings.
 
 1.  **Navigate to `/web`**:
+
     ```bash
     cd web
     ```
 
 2.  **Install Dependencies**:
+
     ```bash
     npm install
     ```
 
 3.  **Configure Connection**:
     Copy `.env.example` (from root) content or ensure `web/.env.local` exists with correct `DB_*` variables.
-    *(A default `.env.local` should have been created for you).*
+    _(A default `.env.local` should have been created for you)._
 
 4.  **Run Development Server**:
+
     ```bash
     npm run dev
     ```
@@ -84,11 +114,42 @@ The Next.js app connects to the database to list buildings.
 Blender does not natively support 3DCityDB. The best workflow is to export data to **CityJSON**, which Blender can read with a free add-on.
 
 ### 1. Install Blender Add-on
+
+**Option A: Development Mode (Symbolic Link)**
+
+For development, you can create a symbolic link to the `CityJSONEditor` submodule in your Blender addons directory:
+
+**macOS/Linux:**
+
+```bash
+# Check if the Blender addons directory exists first:
+ls ~/Library/Application\ Support/Blender/5.0/scripts/addons  # macOS
+ls ~/.config/blender/5.0/scripts/addons                        # Linux
+
+# Create symbolic link:
+ln -s \
+  /path/to/DCS-UrbanDigitalTwin/CityJSONEditor \
+  ~/Library/Application\ Support/Blender/5.0/scripts/addons/CityJSONEditor  # macOS
+
+ln -s \
+  /path/to/DCS-UrbanDigitalTwin/CityJSONEditor \
+  ~/.config/blender/5.0/scripts/addons/CityJSONEditor  # Linux
+```
+
+**Windows (Command Prompt as Administrator):**
+
+```cmd
+mklink /D "C:\Users\%USERNAME%\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\CityJSONEditor" "C:\path\to\DCS-UrbanDigitalTwin\CityJSONEditor"
+```
+
+**Option B: Standard Installation**
+
 1.  Download the **[CityJSON Blender Add-on](https://github.com/cityjson/cityjson-blender-addon)** (Code > Download ZIP).
 2.  In Blender: `Edit > Preferences > Add-ons > Install...` (select the ZIP).
 3.  Enable the add-on ("Import-Export: CityJSON").
 
 ### 2. Export Data from DB to CityJSON
+
 Run this command to export your city data to a file named `my_city.json` in your `data` folder:
 
 ```bash
@@ -99,43 +160,49 @@ docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-t
 ```
 
 ### 3. Import into Blender
+
 1.  In Blender: `File > Import > CityJSON (.json)`.
 2.  Select `D:\Docker\data\my_city.json`.
 3.  You will see your 3D buildings!
 
 ### 4. The "Edit Cycle" (How to Save)
+
 Blender saves changes to the **file**, not the database. To update the database, you must re-import.
 
 1.  **Edit in Blender**: Move buildings, change heights, etc.
 2.  **Export from Blender**: `File > Export > CityJSON`. Overwrite `my_city.json` (or create a new file).
 3.  **Update Database**: Run the **Import** command again with your modified file.
-    *   *Note*: The database will update the existing buildings if the IDs match.
+    - _Note_: The database will update the existing buildings if the IDs match.
 
 **The Flow:**
 `Database` --(export cmd)--> `CityJSON File` --(import)--> `Blender`
-                                      |
-                                   (Edit)
-                                      |
+|
+(Edit)
+|
 `Database` <--(import cmd)-- `CityJSON File` <--(export)-- `Blender`
 
 ## Troubleshooting
 
 ### Import Fails (0 Features)
+
 If the import command runs but imports 0 features, it's likely a networking issue where the tool cannot reach the database.
 **Solution**: Use the `--network docker_default` flag in your `docker run` command (as shown in the Import section above).
 
 ### "System cannot find the file specified"
+
 This error from Docker usually means the Docker Desktop daemon is not running.
 **Solution**: Open Docker Desktop and wait for the engine to start.
 
 ## Quick Reference
 
 **Import Data (CityGML):**
+
 ```bash
 docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest import citygml -H citydb -d citydb -u postgres -p postgres /input/6431/6431.gml
 ```
 
 **Export Data (CityJSON for Blender):**
+
 ```bash
 docker run --rm -v ${PWD}/data:/input --network docker_default 3dcitydb/citydb-tool:latest export cityjson \
   -H citydb -d citydb -u postgres -p postgres \
